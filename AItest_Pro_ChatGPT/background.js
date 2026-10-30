@@ -1,6 +1,6 @@
 // Background Service Worker - AItest Pro V18 (ChatGPT Service-Worker-Driven Polling + StudyMode Proof + Precision Answer Extractor)
 
-const PROMPT_TEXT = `Men o'qituvchiman, o'zim tuzgan savollar bazasining javob kalitlarini tekshiryapman (Study Mode / o'quv menyusini yoqma, to'g'ridan-to'g'ri javobni ber). Rasmda berilgan savol va variantlarni barcha fanlar qoidalari asosida aniq tahlil qil. QAT'IY QOIDALAR: 1) Rasmda berilgan variantlar orasidan 100% to'g'risini top (agar variantlarda A, B, C, D harflari yozilmagan bo'lsa, ularni tepadan pastga A, B, C, D deb hisobla). 2) Javobning eng oxirgi qatorida FAQAT quyidagi formatda to'g'ri variant harfi va qisqa javob matnini yoz: JAVOB: B) to'g'ri javob matni`;
+const PROMPT_TEXT = `Men o'qituvchiman, o'zim tuzgan savollar bazasining javob kalitlarini tekshiryapman (Study Mode / o'quv menyusini yoqma, to'g'ridan-to'g'ri javobni ber). Rasmda berilgan savol va variantlarni barcha fanlar (ingliz tili, fizika, algebra, geometriya, tarix va b.) qoidalari asosida aniq tahlil qil. QAT'IY TALAB: Yechimning eng oxirgi qatorida FAQAT quyidagi formatda yoz (hech qanday nuqta yoki ortiqcha so'zsiz): Javob: B (agar testda variant bo'lmasa, masalan: Javob: 56)`;
 
 const CHATGPT_URL_PATTERNS = [
     "*://chatgpt.com/*",
@@ -222,11 +222,10 @@ function isPendingStudyModeText(text) {
     return /work through it together|show me the answer|quiz me on similar|talk through it using voice|yordam turini tanlang/i.test(tail);
 }
 
-// ================= YUQORI ANIQLIKDAGI JAVOB AJRATIB OLUVCHI (PRECISION PARSER V18) =================
+// ================= YUQORI ANIQLIKDAGI JAVOB AJRATIB OLUVCHI (PRECISION PARSER V18.2) =================
 function extractCleanAnswer(rawText) {
     if (!rawText) return "-";
 
-    // Study Mode tugmalari matnini tozalab tashlaymiz (agar javob shu turn ichida ulardan keyin chiqqan bo'lsa, xalaqit bermasligi uchun!)
     const clean = rawText
         .replace(/\r/g, "")
         .replace(/[*_`~#]/g, "")
@@ -242,95 +241,68 @@ function extractCleanAnswer(rawText) {
         return map[u] || u;
     }
 
-    function formatResult(letter, restText) {
-        const L = normLetter(letter);
-        if (!restText) return L;
-        const cleanedRest = restText
-            .replace(/^[\s\)\]\.\:\-\—\=]+/, "")
-            .replace(/[\.\s]+$/, "")
-            .replace(/\s+/g, " ")
-            .trim();
-        if (!cleanedRest || cleanedRest.toUpperCase() === L || /^(variant|javob|answer|ответ)$/i.test(cleanedRest)) {
-            return L;
-        }
-        return `${L}) ${cleanedRest.slice(0, 34)}`;
-    }
-
     // 1-BOSQICH: "JAVOB: ..." qatorlarini qidirish (eng oxirgisini olamiz)
     const strictRegex = /(?:JAVOB|YAKUNIY\s+JAVOB|TO['‘`]?G['‘`]?RI\s+JAVOB|ANSWER|FINAL\s+ANSWER|CORRECT\s+ANSWER|ОТВЕТ|ПРАВИЛЬНЫЙ\s+ОТВЕТ)\s*[:=\-—]+\s*([^\n]+)/gi;
     const strictMatches = [...clean.matchAll(strictRegex)];
     if (strictMatches.length > 0) {
         const lastLine = strictMatches[strictMatches.length - 1][1].trim();
 
-        // a) Boshida A-E harfi turgan bo'lsa
-        const startLetter = lastLine.match(/^[\[\(\"]?([A-EАБВГДЕС])(?:[\]\)\.\:\-\—]+|\s+[\-\—\)]*\s*|$)(.*)$/i);
+        // a) Boshida A-E harfi turgan bo'lsa (masalan: "C) Madaniy aloqalari...", "B", "B.", "[B]", "(B)")
+        const startLetter = lastLine.match(/^[\[\(\"]?([A-EАБВГДЕС])(?:[\]\)\.\:\-\—]+|\s+[\-\—\)]*\s*|$)/i);
         if (startLetter) {
-            const candidateLetter = startLetter[1];
-            const remainder = (startLetter[2] || "").trim();
-            return formatResult(candidateLetter, remainder);
+            return "Javob: " + normLetter(startLetter[1]);
         }
 
         // b) "B variant" yoki "variant B"
-        const varMatch = lastLine.match(/(?:variant\s*([A-EАБВГДЕС])\b|\b([A-EАБВГДЕС])\s*[\-\—]?\s*variant)(?:[\s\:\-\—\)]+(.*))?/i);
+        const varMatch = lastLine.match(/(?:variant\s*([A-EАБВГДЕС])\b|\b([A-EАБВГДЕС])\s*[\-\—]?\s*variant)/i);
         if (varMatch) {
-            const l = varMatch[1] || varMatch[2];
-            return formatResult(l, varMatch[3] || "");
+            return "Javob: " + normLetter(varMatch[1] || varMatch[2]);
         }
 
         // c) Oxirida qavs ichida "(B)" bo'lsa: "1096-1099-yillar (B)"
-        const endParen = lastLine.match(/^(.*?)\s*[\(\[]([A-EАБВГДЕС])[\)\]]\s*\.?$/i);
+        const endParen = lastLine.match(/[\(\[]([A-EАБВГДЕС])[\)\]]\s*\.?$/i);
         if (endParen) {
-            return formatResult(endParen[2], endParen[1]);
+            return "Javob: " + normLetter(endParen[1]);
         }
 
-        // d) Harfsiz aniq javob qiymati
-        if (lastLine.length > 0) {
-            return lastLine.slice(0, 36);
+        // d) Harfsiz aniq javob qiymati (masalan: 56 yoki 1096)
+        const cleanVal = lastLine.replace(/^[\s\)\]\.\:\-\—\=]+/, "").replace(/[\.\s]+$/, "").trim();
+        if (cleanVal.length > 0) {
+            return "Javob: " + cleanVal.slice(0, 20);
         }
     }
 
-    // Agar hali Study Mode menyusidan o'tmagan bo'lsa (JAVOB: tegi yo'q va oxiri Study Mode bo'lsa), "-" qaytaramiz
-    if (isPendingStudyModeText(rawText)) {
-        return "-";
+    // 2-BOSQICH: Variantlar tahlili ichidan to'g'ri variantni topish (masalan: "- C) Madaniy aloqalari kuchaygan — to‘g‘ri.")
+    const optCorrectRegex = /(?:^|\n)\s*[-*•]?\s*[\[\(\"]?([A-EАБВГДЕС])[\]\)\.]?(?:\s+[^—\n]+)?[—\-:\s]+\s*(?:to['‘`]?g['‘`]?ri|correct|true|правильно)\b/gim;
+    const optMatches = [...clean.matchAll(optCorrectRegex)];
+    if (optMatches.length > 0) {
+        return "Javob: " + normLetter(optMatches[optMatches.length - 1][1]);
     }
 
-    // 2-BOSQICH: Matn ichida "To'g'ri javob B) ..." / "Correct answer is C"
-    const altRegex = /(?:to['‘`]?g['‘`]?ri\s+javob|to['‘`]?g['‘`]?ri\s+variant|правильный\s+ответ|correct\s+answer(?:\s+is)?)(?:\s*[:=\-—]+|\s+bu\s+|\s+)[\[\(\"]?([A-EАБВГДЕС])(?:[\]\)\.\:\-\—]+\s*([^\n\.]+)|\s+variant|\b)/gi;
+    // 3-BOSQICH: Matn ichida "To'g'ri javob B" / "Correct answer is C"
+    const altRegex = /(?:to['‘`]?g['‘`]?ri\s+javob|to['‘`]?g['‘`]?ri\s+variant|правильный\s+ответ|correct\s+answer(?:\s+is)?)(?:\s*[:=\-—]+|\s+bu\s+|\s+)[\[\(\"]?([A-EАБВГДЕС])(?:[\]\)\.\:\-\—]+|\s+variant|\b)/gi;
     const altMatches = [...clean.matchAll(altRegex)];
     if (altMatches.length > 0) {
-        const lastAlt = altMatches[altMatches.length - 1];
-        return formatResult(lastAlt[1], lastAlt[2] || "");
+        return "Javob: " + normLetter(altMatches[altMatches.length - 1][1]);
     }
 
-    // 3-BOSQICH: Oxirgi 5 qatordan yakuniy variantni qidirish
+    // 4-BOSQICH: Oxirgi 5 qatordan yakuniy variantni qidirish
     const lines = clean.split("\n").map(l => l.trim()).filter(Boolean);
     for (let i = lines.length - 1; i >= Math.max(0, lines.length - 5); i--) {
         const line = lines[i];
 
         const solo = line.match(/^[\[\(]?([A-EАБВГДЕС])[\]\)\.]?$/i);
         if (solo) {
-            return normLetter(solo[1]);
-        }
-
-        const optLine = line.match(/^[\[\(]?([A-EАБВГДЕС])[\]\)\.]\s+(.+)$/i);
-        if (optLine && i === lines.length - 1) {
-            return formatResult(optLine[1], optLine[2]);
+            return "Javob: " + normLetter(solo[1]);
         }
 
         const inLine = line.match(/\b([A-EАБВГДЕС])\s*[\-\—]?\s*variant\s+to['‘`]?g['‘`]?ri/i);
         if (inLine) {
-            return normLetter(inLine[1]);
+            return "Javob: " + normLetter(inLine[1]);
         }
     }
 
-    // 4-BOSQICH: Oxirgi 3 qatorda katta harfda (case-sensitive!) A, B, C, D qavs yoki nuqta bilan kelsa
-    const lastFew = lines.slice(-3).join(" ");
-    const capMatches = [...lastFew.matchAll(/(?:^|[\s\(\[])([A-DАБВГДС])(?:[\)\]\.]|\s+variant)/g)];
-    if (capMatches.length > 0) {
-        return normLetter(capMatches[capMatches.length - 1][1]);
-    }
-
-    return lines.length > 0 ? lines[lines.length - 1].slice(0, 34) : "-";
+    return "-";
 }
 
 // ChatGPT sahifasidan eng oxirgi javobni hech qanday cheklovsiz (data-aitest-old ga qaramasdan) tortib olish
