@@ -10,6 +10,17 @@ const CHATGPT_URL_PATTERNS = [
     "*://chat.openai.com/*"
 ];
 
+let activeChatGPTTabId = null;
+let lastDetectedAnswer = "-";
+
+try {
+    chrome.storage.local.get("lastDetectedAnswer", (data) => {
+        if (data?.lastDetectedAnswer && data.lastDetectedAnswer !== "-") {
+            lastDetectedAnswer = data.lastDetectedAnswer;
+        }
+    });
+} catch(e) {}
+
 // Saytning asosiy (MAIN) JS muhitiga CSP-ni aylanib o'tib himoya o'rnatish
 function applyMainWorldShield() {
     try {
@@ -147,10 +158,18 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (request.action === "fetch_latest_answer") {
         (async () => {
             try {
-                const answer = await getLatestAnswerFromChatGPT();
+                let answer = await getLatestAnswerFromChatGPT();
+                if ((!answer || answer === "-") && lastDetectedAnswer && lastDetectedAnswer !== "-") {
+                    answer = lastDetectedAnswer;
+                }
+                if (answer && answer !== "-") {
+                    lastDetectedAnswer = answer;
+                    try { chrome.storage.local.set({ lastDetectedAnswer: answer }); } catch(e) {}
+                }
                 sendResponse({ answer: answer || "-" });
             } catch (error) {
-                sendResponse({ answer: "-" });
+                const fallback = (lastDetectedAnswer && lastDetectedAnswer !== "-") ? lastDetectedAnswer : "-";
+                sendResponse({ answer: fallback });
             }
         })();
         return true;
@@ -171,8 +190,15 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
             let answer = await askChatGPTWeb(dataUrl, currentWinId);
             if (!answer || answer === "-") {
-                await new Promise(r => setTimeout(r, 1000));
+                await new Promise(r => setTimeout(r, 600));
                 answer = (await getLatestAnswerFromChatGPT()) || "-";
+            }
+            if ((!answer || answer === "-") && lastDetectedAnswer && lastDetectedAnswer !== "-") {
+                answer = lastDetectedAnswer;
+            }
+            if (answer && answer !== "-") {
+                lastDetectedAnswer = answer;
+                try { chrome.storage.local.set({ lastDetectedAnswer: answer }); } catch(e) {}
             }
 
             if (senderTabId) {
@@ -184,7 +210,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             }
             sendResponse({ answer });
         } catch (error) {
-            sendResponse({ answer: "-" });
+            const fallback = (lastDetectedAnswer && lastDetectedAnswer !== "-") ? lastDetectedAnswer : "-";
+            sendResponse({ answer: fallback });
         }
     })();
 
@@ -312,57 +339,116 @@ function extractCleanAnswer(rawText) {
     return "-";
 }
 
-// ChatGPT sahifasidan eng oxirgi javobni hech qanday cheklovsiz (data-aitest-old ga qaramasdan) tortib olish
-async function getLatestAnswerFromChatGPT() {
-    const tabs = await chrome.tabs.query({ url: CHATGPT_URL_PATTERNS });
-    if (!tabs || tabs.length === 0) return null;
-    const tab = tabs[0];
+// ChatGPT sahifasidagi barcha matnlarni to'liq (turnlar, assistant, p, li, div) yig'ib olish
+function extractAllTextsFromChatGPT() {
+    try {
+        window.dispatchEvent(new Event('focus'));
+        document.dispatchEvent(new Event('visibilitychange'));
+    } catch(e) {}
 
-    const results = await chrome.scripting.executeScript({
-        target: { tabId: tab.id },
-        func: () => {
-            try {
-                window.dispatchEvent(new Event('focus'));
-                document.dispatchEvent(new Event('visibilitychange'));
-            } catch(e) {}
+    const textPieces = [];
 
-            // Barcha assistant bloklari va turnlarini yig'amiz (eng oxirgisidan tepaga qarab tekshirish uchun)
-            const candidates = [];
+    // 1. Assistant va markdown turnlari (article, div, role, agent-turn)
+    const assistantNodes = document.querySelectorAll(
+        '[data-message-author-role="assistant"], ' +
+        '[class*="agent-turn"], ' +
+        '[class*="conversation-turn"]:not([class*="user"]), ' +
+        '[data-testid^="conversation-turn-"]:not([data-testid*="user"]), ' +
+        'article:not([data-message-author-role="user"]), ' +
+        '.markdown, ' +
+        'div[class*="text-message"], ' +
+        'main div.min-h-8'
+    );
 
-            const articles = [...document.querySelectorAll('article[data-testid^="conversation-turn-"]')];
-            for (const art of articles) {
-                if (art.querySelector('[data-message-author-role="assistant"], .markdown, .agent-turn') || !art.querySelector('[data-message-author-role="user"]')) {
-                    const t = (art.textContent || art.innerText || "").trim();
-                    if (t) candidates.push(t);
-                }
-            }
-
-            const assistantEls = [...document.querySelectorAll('[data-message-author-role="assistant"], .markdown, .agent-turn')];
-            for (const el of assistantEls) {
-                const t = (el.textContent || el.innerText || "").trim();
-                if (t) candidates.push(t);
-            }
-
-            return candidates;
+    for (const node of assistantNodes) {
+        if (node.querySelector && (node.querySelector('[data-message-author-role="user"]') || node.querySelector('[data-testid*="user"]'))) {
+            continue;
         }
-    }).catch(() => null);
-
-    const candidates = results?.[0]?.result;
-    if (!candidates || !candidates.length) return null;
-
-    // 1. Avval oxiridan boshlab "JAVOB:" tegi bor xabarni qidiramiz
-    for (let i = candidates.length - 1; i >= 0; i--) {
-        const raw = candidates[i];
-        if (/(?:JAVOB|YAKUNIY\s+JAVOB|TO['‘`]?G['‘`]?RI\s+JAVOB|ANSWER|ОТВЕТ)\s*[:=\-—]/i.test(raw)) {
-            const parsed = extractCleanAnswer(raw);
-            if (parsed && parsed !== "-") return parsed;
+        const t = (node.innerText || node.textContent || "").trim();
+        if (t && t.length > 0) {
+            textPieces.push(t);
         }
     }
 
-    // 2. Agar teg topilmasa, eng oxirgi nomzoddan javobni ajratib olamiz
-    for (let i = candidates.length - 1; i >= Math.max(0, candidates.length - 4); i--) {
-        const parsed = extractCleanAnswer(candidates[i]);
-        if (parsed && parsed !== "-") return parsed;
+    // 2. To'g'ridan-to'g'ri JAVOB yoki to'g'ri variant yozilgan elementlar (p, li, div, strong)
+    const allSpecific = document.querySelectorAll('main p, main li, main div, p, li, div');
+    for (const el of allSpecific) {
+        if (el.closest && (el.closest('[data-message-author-role="user"]') || el.closest('[data-testid*="user"]'))) {
+            continue;
+        }
+        const t = (el.innerText || el.textContent || "").trim();
+        if (t && /(?:javob|yakuniy|to['‘`]?g['‘`]?ri|variant|answer|ответ)\s*[:=\-—]/i.test(t)) {
+            if (t.length < 350) {
+                textPieces.push(t);
+            }
+        }
+    }
+
+    // 3. Oxirgi zaxira: butun main yoki body matni
+    const mainEl = document.querySelector('main') || document.body;
+    if (mainEl) {
+        const full = (mainEl.innerText || mainEl.textContent || "").trim();
+        if (full) {
+            textPieces.push(full);
+        }
+    }
+
+    return textPieces;
+}
+
+// ChatGPT sahifasidan eng oxirgi javobni qidirish (barcha tablarni tekshiradi!)
+async function getLatestAnswerFromChatGPT() {
+    let tabs = await chrome.tabs.query({ url: CHATGPT_URL_PATTERNS }).catch(() => []);
+    if (!tabs || !tabs.length) {
+        const allTabs = await chrome.tabs.query({}).catch(() => []);
+        tabs = allTabs.filter(t => t.url && (t.url.includes("chatgpt.com") || t.url.includes("openai.com")));
+    }
+
+    if (!tabs || tabs.length === 0) {
+        return (lastDetectedAnswer && lastDetectedAnswer !== "-") ? lastDetectedAnswer : null;
+    }
+
+    // Tablarni tartiblaymiz:
+    // 1-o'rinda: activeChatGPTTabId
+    // Keyin: qolgan tablar oxirgisidan birinchisiga (eng yangi tablar birinchi)
+    const targetTabs = [];
+    if (activeChatGPTTabId) {
+        const found = tabs.find(t => t.id === activeChatGPTTabId);
+        if (found) targetTabs.push(found);
+    }
+    for (let i = tabs.length - 1; i >= 0; i--) {
+        if (!targetTabs.some(t => t.id === tabs[i].id)) {
+            targetTabs.push(tabs[i]);
+        }
+    }
+
+    for (const tab of targetTabs) {
+        if (tab.discarded) continue;
+
+        try {
+            const results = await chrome.scripting.executeScript({
+                target: { tabId: tab.id },
+                func: extractAllTextsFromChatGPT
+            }).catch(() => null);
+
+            const pieces = results?.[0]?.result;
+            if (!pieces || !pieces.length) continue;
+
+            // Oxiridan boshlab javobni qidiramiz
+            for (let i = pieces.length - 1; i >= 0; i--) {
+                const parsed = extractCleanAnswer(pieces[i]);
+                if (parsed && parsed !== "-") {
+                    lastDetectedAnswer = parsed;
+                    activeChatGPTTabId = tab.id;
+                    try { chrome.storage.local.set({ lastDetectedAnswer: parsed }); } catch(e) {}
+                    return parsed;
+                }
+            }
+        } catch (e) {}
+    }
+
+    if (lastDetectedAnswer && lastDetectedAnswer !== "-") {
+        return lastDetectedAnswer;
     }
 
     return null;
@@ -370,7 +456,11 @@ async function getLatestAnswerFromChatGPT() {
 
 // YANGI OYNA EMAS, HECH QACHON FOKUSNI O'ZGARTIRMAYDIGAN ORQA FON TABI (active: false) OCHISH!
 async function getOrCreateChatGPTTab(currentWindowId) {
-    const tabs = await chrome.tabs.query({ url: CHATGPT_URL_PATTERNS });
+    let tabs = await chrome.tabs.query({ url: CHATGPT_URL_PATTERNS }).catch(() => []);
+    if (!tabs || !tabs.length) {
+        const allTabs = await chrome.tabs.query({}).catch(() => []);
+        tabs = allTabs.filter(t => t.url && (t.url.includes("chatgpt.com") || t.url.includes("openai.com")));
+    }
 
     if (tabs.length) {
         for (const tab of tabs) {
@@ -378,6 +468,7 @@ async function getOrCreateChatGPTTab(currentWindowId) {
                 try { await chrome.tabs.remove(tab.id); } catch(e) {}
                 continue;
             }
+            activeChatGPTTabId = tab.id;
             return tab;
         }
     }
@@ -398,6 +489,10 @@ async function getOrCreateChatGPTTab(currentWindowId) {
             url: "https://chatgpt.com/",
             active: false
         });
+    }
+
+    if (chatgptTab) {
+        activeChatGPTTabId = chatgptTab.id;
     }
 
     await new Promise((resolve) => {
@@ -792,31 +887,66 @@ function pollChatGPTDomState(baselineCount, baselineLastText) {
             'button[data-testid="stop-button"], button[aria-label*="Stop" i], button[aria-label*="To‘xtat" i], button[aria-label*="Остановить" i], .result-streaming'
         );
 
-        // Yangi chiqqan assistant matnini topamiz
-        const newMdNodes = [...document.querySelectorAll('[data-message-author-role="assistant"], .markdown, .agent-turn')]
-            .filter(el => !el.hasAttribute("data-aitest-prev"));
+        // Yangi chiqqan assistant matnini topamiz (barcha turn va bloklardan)
+        const candidateNodes = [
+            ...document.querySelectorAll(
+                '[data-message-author-role="assistant"]:not([data-aitest-prev]), ' +
+                '[class*="agent-turn"]:not([data-aitest-prev]), ' +
+                '[data-testid^="conversation-turn-"]:not([data-aitest-prev]), ' +
+                '[class*="conversation-turn"]:not([data-aitest-prev]), ' +
+                'article:not([data-aitest-prev]), ' +
+                '.markdown:not([data-aitest-prev])'
+            )
+        ];
 
         let latestText = "";
         let activeTurnEl = null;
 
-        if (newMdNodes.length > 0) {
-            const lastNode = newMdNodes[newMdNodes.length - 1];
-            activeTurnEl = lastNode.closest('article') || lastNode.parentElement || lastNode;
-            // Agar bitta turn ichida bir nechta yangi markdown bo'lsa (masalan Study Mode dan keyin javob chiqsa), eng oxirgi markdown va butun turnni birlashtiramiz
+        if (candidateNodes.length > 0) {
+            const lastNode = candidateNodes[candidateNodes.length - 1];
+            activeTurnEl = lastNode.closest('article, [data-testid^="conversation-turn-"], [class*="conversation-turn"]') || lastNode.parentElement || lastNode;
             const nodeText = (lastNode.textContent || lastNode.innerText || "").trim();
             const turnText = (activeTurnEl.textContent || activeTurnEl.innerText || "").trim();
-            latestText = nodeText.includes("JAVOB") ? nodeText : (turnText || nodeText);
-        } else {
-            // Zaxira: Agar ChatGPT mavjud turn ichini yangilagan bo'lsa
-            const articles = [...document.querySelectorAll('article[data-testid^="conversation-turn-"]')];
-            if (articles.length > 0) {
-                const lastArt = articles[articles.length - 1];
-                if (!lastArt.querySelector('[data-message-author-role="user"]')) {
-                    const t = (lastArt.textContent || lastArt.innerText || "").trim();
+            latestText = (nodeText.includes("Javob") || nodeText.includes("JAVOB")) ? nodeText : (turnText || nodeText);
+        }
+
+        // Zaxira 1: p va div elementlardan JAVOB so'zini qidirish
+        if (!latestText) {
+            const specificEls = document.querySelectorAll('main p, main li, main div.whitespace-pre-wrap, p, li');
+            for (let i = specificEls.length - 1; i >= 0; i--) {
+                const el = specificEls[i];
+                if (el.closest && (el.closest('[data-message-author-role="user"]') || el.closest('[data-testid*="user"]'))) continue;
+                const t = (el.innerText || el.textContent || "").trim();
+                if (t && /(?:javob|yakuniy|to['‘`]?g['‘`]?ri|variant|answer|ответ)\s*[:=\-—]/i.test(t)) {
+                    latestText = t;
+                    activeTurnEl = el;
+                    break;
+                }
+            }
+        }
+
+        // Zaxira 2: Agar ChatGPT mavjud turn ichini yangilagan bo'lsa
+        if (!latestText) {
+            const allTurns = [...document.querySelectorAll('[data-testid^="conversation-turn-"], article, main [class*="conversation-turn"]')];
+            if (allTurns.length > 0) {
+                const lastTurn = allTurns[allTurns.length - 1];
+                if (!lastTurn.querySelector('[data-message-author-role="user"]') && !lastTurn.matches('[data-message-author-role="user"]')) {
+                    const t = (lastTurn.textContent || lastTurn.innerText || "").trim();
                     if (t && t !== baselineLastText) {
                         latestText = t;
-                        activeTurnEl = lastArt;
+                        activeTurnEl = lastTurn;
                     }
+                }
+            }
+        }
+
+        // Zaxira 3: Butun main matnining oxirgi qismi
+        if (!latestText) {
+            const mainEl = document.querySelector('main');
+            if (mainEl) {
+                const fullText = (mainEl.innerText || mainEl.textContent || "").trim();
+                if (fullText && fullText !== baselineLastText && /(?:javob|answer|variant)\s*[:=\-—]/i.test(fullText)) {
+                    latestText = fullText.slice(-600);
                 }
             }
         }

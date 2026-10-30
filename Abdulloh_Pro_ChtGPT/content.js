@@ -276,15 +276,21 @@ function sanitizeDisplayText(text) {
     return str;
 }
 
+let lastValidAnswer = "";
+
 function displayAnswerWithAutoWipe(text) {
     if (!isTopFrame) return;
     const cleanText = sanitizeDisplayText(text);
-    // Agar hozirgina haqiqiy javob ko'rsatilgan bo'lsa (3 soniya ichida), uni "-" bilan ustidan yozib yubormaymiz!
-    if (cleanText === "-" && (Date.now() - lastValidAnswerShownAt < 3000)) {
-        return;
-    }
     if (cleanText && cleanText !== ".." && cleanText !== "-") {
+        lastValidAnswer = cleanText;
         lastValidAnswerShownAt = Date.now();
+    }
+    // Agar hozirgina haqiqiy javob ko'rsatilgan bo'lsa (yoki avvalgi javob mavjud bo'lsa), uni "-" bilan ustidan yozib yubormaymiz!
+    if (cleanText === "-" && (Date.now() - lastValidAnswerShownAt < 8000)) {
+        if (lastValidAnswer) {
+            getOrCreateOverlay().innerText = lastValidAnswer;
+        }
+        return;
     }
 
     const overlay = getOrCreateOverlay();
@@ -295,7 +301,7 @@ function displayAnswerWithAutoWipe(text) {
     if (cleanText && cleanText !== "..") {
         wipeTimer = setTimeout(() => {
             overlay.innerText = "";
-        }, 6000);
+        }, 7000);
     }
 }
 
@@ -335,14 +341,20 @@ async function fetchAnswerNow() {
     try {
         chrome.runtime.sendMessage({ action: "fetch_latest_answer" }, (response) => {
             void chrome.runtime.lastError;
-            if (response && response.answer) {
+            if (response && response.answer && response.answer !== "-") {
                 displayAnswerWithAutoWipe(response.answer);
+            } else if (lastValidAnswer) {
+                displayAnswerWithAutoWipe(lastValidAnswer);
             } else {
                 displayAnswerWithAutoWipe("-");
             }
         });
     } catch (e) {
-        displayAnswerWithAutoWipe("-");
+        if (lastValidAnswer) {
+            displayAnswerWithAutoWipe(lastValidAnswer);
+        } else {
+            displayAnswerWithAutoWipe("-");
+        }
     }
 }
 

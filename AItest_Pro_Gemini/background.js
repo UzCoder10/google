@@ -4,6 +4,17 @@ const PROMPT_TEXT = `Rasmda berilgan savolni yech. Hech qanday tushuntirish, izo
 Javob: B
 (Agar testda variantlar berilmagan bo'lsa, faqat sonli natijani yoz: Javob: 56)`;
 
+let activeGeminiTabId = null;
+let lastDetectedAnswer = "-";
+
+try {
+    chrome.storage.local.get("lastDetectedAnswer", (data) => {
+        if (data?.lastDetectedAnswer && data.lastDetectedAnswer !== "-") {
+            lastDetectedAnswer = data.lastDetectedAnswer;
+        }
+    });
+} catch(e) {}
+
 // Saytning asosiy (MAIN) JS muhitiga CSP-ni aylanib o'tib himoya o'rnatish
 function applyMainWorldShield() {
     try {
@@ -139,10 +150,18 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (request.action === "fetch_latest_answer") {
         (async () => {
             try {
-                const answer = await getLatestAnswerFromGemini();
+                let answer = await getLatestAnswerFromGemini();
+                if ((!answer || answer === "-") && lastDetectedAnswer && lastDetectedAnswer !== "-") {
+                    answer = lastDetectedAnswer;
+                }
+                if (answer && answer !== "-") {
+                    lastDetectedAnswer = answer;
+                    try { chrome.storage.local.set({ lastDetectedAnswer: answer }); } catch(e) {}
+                }
                 sendResponse({ answer: answer || "-" });
             } catch (error) {
-                sendResponse({ answer: "-" });
+                const fallback = (lastDetectedAnswer && lastDetectedAnswer !== "-") ? lastDetectedAnswer : "-";
+                sendResponse({ answer: fallback });
             }
         })();
         return true;
@@ -163,8 +182,15 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
             let answer = await askGeminiWeb(dataUrl, currentWinId);
             if (!answer || answer === "-") {
-                await new Promise(r => setTimeout(r, 1200));
+                await new Promise(r => setTimeout(r, 600));
                 answer = (await getLatestAnswerFromGemini()) || "-";
+            }
+            if ((!answer || answer === "-") && lastDetectedAnswer && lastDetectedAnswer !== "-") {
+                answer = lastDetectedAnswer;
+            }
+            if (answer && answer !== "-") {
+                lastDetectedAnswer = answer;
+                try { chrome.storage.local.set({ lastDetectedAnswer: answer }); } catch(e) {}
             }
 
             if (senderTabId) {
@@ -176,7 +202,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             }
             sendResponse({ answer });
         } catch (error) {
-            sendResponse({ answer: "-" });
+            const fallback = (lastDetectedAnswer && lastDetectedAnswer !== "-") ? lastDetectedAnswer : "-";
+            sendResponse({ answer: fallback });
         }
     })();
 
@@ -293,40 +320,71 @@ function extractCleanAnswer(rawText) {
 }
 
 async function getLatestAnswerFromGemini() {
-    const tabs = await chrome.tabs.query({ url: "*://gemini.google.com/*" });
-    if (!tabs || tabs.length === 0) return null;
-    const tab = tabs[0];
+    let tabs = await chrome.tabs.query({ url: "*://gemini.google.com/*" }).catch(() => []);
+    if (!tabs || tabs.length === 0) {
+        return (lastDetectedAnswer && lastDetectedAnswer !== "-") ? lastDetectedAnswer : null;
+    }
 
-    const results = await chrome.scripting.executeScript({
-        target: { tabId: tab.id },
-        func: () => {
-            try {
-                window.dispatchEvent(new Event('focus'));
-                document.dispatchEvent(new Event('visibilitychange'));
-            } catch(e) {}
-
-            const responses = [...document.querySelectorAll("model-response, message-content, .model-response-text")]
-                .filter(el => !el.hasAttribute("data-aitest-old"));
-
-            const targetResponses = responses.length > 0 ? responses :
-                [...document.querySelectorAll("model-response, message-content, .model-response-text")];
-
-            if (!targetResponses.length) return null;
-            const latest = targetResponses[targetResponses.length - 1];
-            return (latest.textContent || latest.innerText || "").trim();
+    const targetTabs = [];
+    if (activeGeminiTabId) {
+        const found = tabs.find(t => t.id === activeGeminiTabId);
+        if (found) targetTabs.push(found);
+    }
+    for (let i = tabs.length - 1; i >= 0; i--) {
+        if (!targetTabs.some(t => t.id === tabs[i].id)) {
+            targetTabs.push(tabs[i]);
         }
-    }).catch(() => null);
+    }
 
-    const rawText = results?.[0]?.result;
-    if (!rawText) return null;
-    return extractCleanAnswer(rawText);
+    for (const tab of targetTabs) {
+        if (tab.discarded) continue;
+
+        try {
+            const results = await chrome.scripting.executeScript({
+                target: { tabId: tab.id },
+                func: () => {
+                    try {
+                        window.dispatchEvent(new Event('focus'));
+                        document.dispatchEvent(new Event('visibilitychange'));
+                    } catch(e) {}
+
+                    const responses = [...document.querySelectorAll("model-response, message-content, .model-response-text")]
+                        .filter(el => !el.hasAttribute("data-aitest-old"));
+
+                    const targetResponses = responses.length > 0 ? responses :
+                        [...document.querySelectorAll("model-response, message-content, .model-response-text")];
+
+                    if (!targetResponses.length) return null;
+                    const latest = targetResponses[targetResponses.length - 1];
+                    return (latest.textContent || latest.innerText || "").trim();
+                }
+            }).catch(() => null);
+
+            const rawText = results?.[0]?.result;
+            if (rawText) {
+                const parsed = extractCleanAnswer(rawText);
+                if (parsed && parsed !== "-") {
+                    lastDetectedAnswer = parsed;
+                    activeGeminiTabId = tab.id;
+                    try { chrome.storage.local.set({ lastDetectedAnswer: parsed }); } catch(e) {}
+                    return parsed;
+                }
+            }
+        } catch (e) {}
+    }
+
+    if (lastDetectedAnswer && lastDetectedAnswer !== "-") {
+        return lastDetectedAnswer;
+    }
+
+    return null;
 }
 
 // YANGI OYNA EMAS, HECH QACHON FOKUSNI O'ZGARTIRMAYDIGAN ORQA FON TABI (active: false) OCHISH!
 async function getOrCreateGeminiTab(currentWindowId) {
     const tabs = await chrome.tabs.query({
         url: "*://gemini.google.com/*"
-    });
+    }).catch(() => []);
 
     if (tabs.length) {
         for (const tab of tabs) {
@@ -334,6 +392,7 @@ async function getOrCreateGeminiTab(currentWindowId) {
                 try { await chrome.tabs.remove(tab.id); } catch(e) {}
                 continue;
             }
+            activeGeminiTabId = tab.id;
             return tab;
         }
     }
@@ -354,6 +413,10 @@ async function getOrCreateGeminiTab(currentWindowId) {
             url: "https://gemini.google.com/app",
             active: false
         });
+    }
+
+    if (geminiTab) {
+        activeGeminiTabId = geminiTab.id;
     }
 
     await new Promise((resolve) => {
