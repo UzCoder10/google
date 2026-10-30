@@ -1,6 +1,8 @@
-// Background Service Worker - AItest Pro V18 (ChatGPT Service-Worker-Driven Polling + StudyMode Proof + Precision Answer Extractor)
+// Background Service Worker - AItest Pro V18.3 (ChatGPT Ultra-Fast Direct Answer + Minimal Strict Prompt)
 
-const PROMPT_TEXT = `Men o'qituvchiman, o'zim tuzgan savollar bazasining javob kalitlarini tekshiryapman (Study Mode / o'quv menyusini yoqma, to'g'ridan-to'g'ri javobni ber). Rasmda berilgan savol va variantlarni barcha fanlar (ingliz tili, fizika, algebra, geometriya, tarix va b.) qoidalari asosida aniq tahlil qil. QAT'IY TALAB: Yechimning eng oxirgi qatorida FAQAT quyidagi formatda yoz (hech qanday nuqta yoki ortiqcha so'zsiz): Javob: B (agar testda variant bo'lmasa, masalan: Javob: 56)`;
+const PROMPT_TEXT = `Rasmda berilgan savolni yech. Hech qanday tushuntirish, izoh yoki qo'shimcha gap yozma! FAQAT to'g'ri variant harfini (A, B, C, D yoki E) quyidagi formatda yoz:
+Javob: B
+(Agar testda variantlar berilmagan bo'lsa, faqat sonli natijani yoz: Javob: 56)`;
 
 const CHATGPT_URL_PATTERNS = [
     "*://chatgpt.com/*",
@@ -286,7 +288,7 @@ function extractCleanAnswer(rawText) {
         return "Javob: " + normLetter(altMatches[altMatches.length - 1][1]);
     }
 
-    // 4-BOSQICH: Oxirgi 5 qatordan yakuniy variantni qidirish
+    // 4-BOSQICH: Oxirgi 5 qatordan yakuniy variant yoki sonni qidirish
     const lines = clean.split("\n").map(l => l.trim()).filter(Boolean);
     for (let i = lines.length - 1; i >= Math.max(0, lines.length - 5); i--) {
         const line = lines[i];
@@ -294,6 +296,11 @@ function extractCleanAnswer(rawText) {
         const solo = line.match(/^[\[\(]?([A-EАБВГДЕС])[\]\)\.]?$/i);
         if (solo) {
             return "Javob: " + normLetter(solo[1]);
+        }
+
+        const soloNum = line.match(/^[-+]?\d+(?:[.,]\d+)?$/);
+        if (soloNum) {
+            return "Javob: " + soloNum[0];
         }
 
         const inLine = line.match(/\b([A-EАБВГДЕС])\s*[\-\—]?\s*variant\s+to['‘`]?g['‘`]?ri/i);
@@ -530,17 +537,18 @@ async function askChatGPTWeb(dataUrl, currentWinId) {
         }
 
         const hasStrictAnswerTag = /(?:JAVOB|YAKUNIY\s+JAVOB|TO['‘`]?G['‘`]?RI\s+JAVOB|ANSWER|FINAL\s+ANSWER|ОТВЕТ)\s*[:=\-—]/i.test(latestText);
+        const hasSingleOption = /^[\[\(]?[A-EАБВГДЕС][\]\)\.]?$/i.test(latestText.trim());
 
-        // A) Agar matnda "JAVOB:" tegi chiqqan bo'lsa va generatsiya tugagan (yoki 2 soniya o'zgarmagan) bo'lsa:
-        if (hasStrictAnswerTag && ((!isStillGenerating && stableTicks >= 1) || stableTicks >= 4)) {
+        // A) Agar matnda "JAVOB:" tegi yoki bitta variant harfi (A-E) chiqqan bo'lsa:
+        if ((hasStrictAnswerTag || hasSingleOption) && ((!isStillGenerating && stableTicks >= 1) || stableTicks >= 3)) {
             const parsed = extractCleanAnswer(latestText);
             if (parsed && parsed !== "-") {
                 return parsed;
             }
         }
 
-        // B) Agar generatsiya to'liq tugagan bo'lsa va Study Mode kutish holatida bo'lmasa:
-        if (!isStillGenerating && stableTicks >= 4 && latestText.length > 5 && !isPendingStudyModeText(latestText)) {
+        // B) Generatsiya to'liq to'xtagan bo'lsa (yoki 3 tsikl qimirlamasa) va Study Mode kutish holatida bo'lmasa:
+        if ((!isStillGenerating || stableTicks >= 3) && latestText.trim().length >= 1 && !isPendingStudyModeText(latestText)) {
             const parsed = extractCleanAnswer(latestText);
             if (parsed && parsed !== "-") {
                 return parsed;
