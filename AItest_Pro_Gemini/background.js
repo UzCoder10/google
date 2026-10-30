@@ -1,4 +1,4 @@
-// Background Service Worker - AItest Pro V15 (Gemini Ultra Edition: Zero-Error + Bounds-Safe + MAIN World Shield)
+// Background Service Worker - AItest Pro V16 (Gemini Silent Background Tab Edition + Zero Focus Switch + MAIN World Shield)
 
 const PROMPT_TEXT = `Sen barcha aniq, tabiiy va gumanitar fanlar (matematika, algebra, geometriya, fizika, kimyo, biologiya, ingliz tili, ona tili, tarix, informatika, mantiq) bo'yicha oliy toifali ekspertisan.
 Ushbu rasmda berilgan test savoli va uning shartini diqqat bilan o'qib, qadam-baqadam aniq tahlil qil va yech.
@@ -14,8 +14,8 @@ JAVOB: A
 // Saytning asosiy (MAIN) JS muhitiga CSP-ni aylanib o'tib himoya o'rnatish
 function applyMainWorldShield() {
     try {
-        if (window.__aitestMainShieldV15) return;
-        window.__aitestMainShieldV15 = true;
+        if (window.__aitestMainShieldV16) return;
+        window.__aitestMainShieldV16 = true;
 
         const originalToString = Function.prototype.toString;
         const mockedSet = new WeakSet();
@@ -118,12 +118,9 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     }
 
     if (request.action === "cleanup_gemini") {
+        // Faqat Gemini tablarining o'zini yopamiz (joriy oynani yopib yubormaslik uchun!)
         chrome.tabs.query({ url: "*://gemini.google.com/*" }, (tabs) => {
             if (tabs && tabs.length > 0) {
-                const winIds = new Set(tabs.map(t => t.windowId).filter(Boolean));
-                winIds.forEach(wId => {
-                    try { chrome.windows.remove(wId, () => { void chrome.runtime.lastError; }); } catch(e) {}
-                });
                 const tabIds = tabs.map(t => t.id).filter(Boolean);
                 if (tabIds.length) {
                     try { chrome.tabs.remove(tabIds, () => { void chrome.runtime.lastError; }); } catch(e) {}
@@ -293,7 +290,7 @@ async function getLatestAnswerFromGemini() {
 
             if (!targetResponses.length) return null;
             const latest = targetResponses[targetResponses.length - 1];
-            return (latest.innerText || latest.textContent || "").trim();
+            return (latest.textContent || latest.innerText || "").trim();
         }
     }).catch(() => null);
 
@@ -302,59 +299,7 @@ async function getLatestAnswerFromGemini() {
     return extractCleanAnswer(rawText);
 }
 
-// Har qanday ekran o'lchami (Mac/Windows/Fullscreen) uchun 100% xatoliksiz oyna yaratish
-async function createSafeAIWindow(targetUrl, currentWindowId) {
-    const w = 420;
-    const h = 420;
-
-    if (currentWindowId) {
-        try {
-            const curWin = await chrome.windows.get(currentWindowId);
-            if (curWin && curWin.state !== "fullscreen" && curWin.state !== "minimized" &&
-                typeof curWin.left === "number" && typeof curWin.top === "number" &&
-                typeof curWin.width === "number" && typeof curWin.height === "number") {
-                const safeLeft = Math.max(20, curWin.left + curWin.width - w - 30);
-                const safeTop = Math.max(20, curWin.top + curWin.height - h - 50);
-                const win = await chrome.windows.create({
-                    url: targetUrl,
-                    focused: false,
-                    type: "normal",
-                    width: w,
-                    height: h,
-                    left: safeLeft,
-                    top: safeTop
-                });
-                if (win) return win;
-            }
-        } catch (e) {}
-    }
-
-    try {
-        const win = await chrome.windows.create({
-            url: targetUrl,
-            focused: false,
-            type: "normal",
-            width: w,
-            height: h
-        });
-        if (win) return win;
-    } catch (e) {}
-
-    try {
-        const win = await chrome.windows.create({
-            url: targetUrl,
-            focused: false
-        });
-        if (win) return win;
-    } catch (e) {}
-
-    const fallbackTab = await chrome.tabs.create({
-        url: targetUrl,
-        active: false
-    });
-    return { id: fallbackTab.windowId, tabs: [fallbackTab] };
-}
-
+// YANGI OYNA EMAS, HECH QACHON FOKUSNI O'ZGARTIRMAYDIGAN ORQA FON TABI (active: false) OCHISH!
 async function getOrCreateGeminiTab(currentWindowId) {
     const tabs = await chrome.tabs.query({
         url: "*://gemini.google.com/*"
@@ -370,17 +315,23 @@ async function getOrCreateGeminiTab(currentWindowId) {
         }
     }
 
-    await new Promise(resolve => setTimeout(resolve, 600));
-
-    const win = await createSafeAIWindow("https://gemini.google.com/app", currentWindowId);
-
+    const createProps = {
+        url: "https://gemini.google.com/app",
+        active: false
+    };
     if (currentWindowId) {
-        try {
-            await chrome.windows.update(currentWindowId, { focused: true });
-        } catch(e) {}
+        createProps.windowId = currentWindowId;
     }
 
-    const geminiTab = (win.tabs && win.tabs[0]) ? win.tabs[0] : (await chrome.tabs.query({ windowId: win.id }))[0];
+    let geminiTab = null;
+    try {
+        geminiTab = await chrome.tabs.create(createProps);
+    } catch (e) {
+        geminiTab = await chrome.tabs.create({
+            url: "https://gemini.google.com/app",
+            active: false
+        });
+    }
 
     await new Promise((resolve) => {
         let isResolved = false;
@@ -402,7 +353,7 @@ async function getOrCreateGeminiTab(currentWindowId) {
         chrome.tabs.onUpdated.addListener(listener);
     });
 
-    await new Promise(resolve => setTimeout(resolve, 2200));
+    await new Promise(resolve => setTimeout(resolve, 2000));
     return geminiTab;
 }
 
@@ -444,7 +395,7 @@ function unfreezeBackgroundTab() {
                     window.dispatchEvent(new Event('focus'));
                     document.dispatchEvent(new Event('visibilitychange'));
                 } catch(e) {}
-            }, 500);
+            }, 400);
         }
 
         window.dispatchEvent(new Event('focus'));
@@ -465,20 +416,7 @@ async function askGeminiWeb(dataUrl, currentWinId) {
         });
     } catch(e) {}
 
-    if (tab && tab.windowId && currentWinId && tab.windowId !== currentWinId) {
-        try {
-            await chrome.windows.update(tab.windowId, { focused: true });
-        } catch(e) {}
-
-        setTimeout(() => {
-            try { chrome.windows.update(currentWinId, { focused: true }); } catch(e) {}
-        }, 250);
-
-        setTimeout(() => {
-            try { chrome.windows.update(currentWinId, { focused: true }); } catch(e) {}
-        }, 700);
-    }
-
+    // HECH QACHON OYNA YOKI TAB FOKUSINI O'ZGARTIRMAYMIZ!
     const results = await chrome.scripting.executeScript({
         target: { tabId: tab.id },
         func: attachImageAndAsk,
@@ -488,7 +426,7 @@ async function askGeminiWeb(dataUrl, currentWinId) {
     let answer = results?.[0]?.result;
 
     try {
-        await new Promise(r => setTimeout(r, 600));
+        await new Promise(r => setTimeout(r, 500));
         const verifiedAnswer = await getLatestAnswerFromGemini();
         if (verifiedAnswer && verifiedAnswer !== "-") {
             answer = verifiedAnswer;
@@ -517,7 +455,7 @@ async function attachImageAndAsk(dataUrl, prompt) {
 
         try {
             const closeButtons = [...document.querySelectorAll('button')].filter(btn => {
-                const t = ((btn.getAttribute('aria-label') || '') + ' ' + (btn.getAttribute('title') || '') + ' ' + btn.innerText).toLowerCase();
+                const t = ((btn.getAttribute('aria-label') || '') + ' ' + (btn.getAttribute('title') || '') + ' ' + (btn.textContent || '')).toLowerCase();
                 return /got it|tushundim|boshlash|dismiss|close|yopish|davom etish|continue/i.test(t);
             });
             closeButtons.forEach(b => b.click());
@@ -558,14 +496,14 @@ async function attachImageAndAsk(dataUrl, prompt) {
                         btn.getAttribute("aria-label"),
                         btn.getAttribute("data-tooltip"),
                         btn.getAttribute("title"),
-                        btn.innerText
+                        btn.textContent
                     ].filter(Boolean).join(" ").toLowerCase();
 
                     if (/feedback|fikr|отзыв|send|yuborish|отправить|mic|ovoz|микрофон|more options|boshqa/i.test(label)) {
                         return false;
                     }
 
-                    const iconTxt = (btn.querySelector('mat-icon')?.innerText || '').trim().toLowerCase();
+                    const iconTxt = (btn.querySelector('mat-icon')?.textContent || '').trim().toLowerCase();
 
                     return /attach|upload|file|fayl|biriktir|rasm|add|qo[‘'`]?sh|plus/i.test(label) ||
                            (iconTxt === 'add' || iconTxt === 'attach_file' || iconTxt === 'upload');
@@ -579,7 +517,7 @@ async function attachImageAndAsk(dataUrl, prompt) {
             const menuItems = [...document.querySelectorAll('[role="menuitem"], .mat-mdc-menu-item, .mat-menu-item, mat-list-item')];
             if (menuItems.length > 0) {
                 const computerUploadItem = menuItems.find(item => {
-                    const txt = ((item.getAttribute("aria-label") || "") + " " + item.innerText).toLowerCase();
+                    const txt = ((item.getAttribute("aria-label") || "") + " " + (item.textContent || "")).toLowerCase();
                     return /kompyuter|computer|yuklash|upload|fayl|file|rasm|image/i.test(txt);
                 });
 
@@ -647,7 +585,7 @@ async function attachImageAndAsk(dataUrl, prompt) {
                     button.getAttribute("aria-label"),
                     button.getAttribute("data-tooltip"),
                     button.getAttribute("title"),
-                    button.innerText
+                    button.textContent
                 ].filter(Boolean).join(" ").toLowerCase();
 
                 if (/feedback|отзыв|fikr|more|options|qo‘shimcha/i.test(label)) {
@@ -756,7 +694,7 @@ async function attachImageAndAsk(dataUrl, prompt) {
 
                 if (newResponses.length > 0) {
                     const latestNewResponse = newResponses[newResponses.length - 1];
-                    const text = (latestNewResponse.innerText || latestNewResponse.textContent || "").trim();
+                    const text = (latestNewResponse.textContent || latestNewResponse.innerText || "").trim();
 
                     const hasAnswerTag = /(?:JAVOB|ANSWER|ОТВЕТ)\s*[:=\-—]\s*[A-FА-Я]/i.test(text);
 
