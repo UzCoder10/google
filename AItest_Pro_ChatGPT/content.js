@@ -1,9 +1,10 @@
-// Content Script - AItest Pro V15 (MAIN + ISOLATED World God Mode + Closed Shadow DOM + Zero-Error Ghost Mode)
+// Content Script - AItest Pro V18 (MAIN + ISOLATED World God Mode + Closed Shadow DOM + Zero-Error Ghost Mode)
 
 let isEnabled = false;
 let isOverlayHidden = false;
 let isShieldApplied = false;
 let isSolving = false;
+let lastValidAnswerShownAt = 0;
 
 let stealthHost = null;
 let shadowRoot = null;
@@ -24,7 +25,7 @@ function isAiProviderHost() {
 chrome.storage.local.get("enabled", (data) => {
     isEnabled = !!data.enabled;
     if (isEnabled && !isAiProviderHost()) {
-        activateShieldV15();
+        activateShieldV18();
     }
 });
 
@@ -32,11 +33,14 @@ chrome.runtime.onMessage.addListener((msg) => {
     if (msg.action === "toggle") {
         isEnabled = !!msg.state;
         if (isEnabled && !isAiProviderHost()) {
-            activateShieldV15();
+            activateShieldV18();
         } else if (!isEnabled && !isAiProviderHost()) {
             location.reload();
         }
     } else if (msg.action === "show_answer" && isTopFrame) {
+        if (msg.answer && msg.answer !== "-") {
+            lastValidAnswerShownAt = Date.now();
+        }
         displayAnswerWithAutoWipe(msg.answer);
     }
 });
@@ -64,11 +68,10 @@ try {
 } catch(e) {}
 
 // ================= 2. GOD MODE HIMOYASI =================
-function activateShieldV15() {
+function activateShieldV18() {
     if (isShieldApplied || isAiProviderHost()) return;
     isShieldApplied = true;
 
-    // MAIN world uchun background orqali CSP-bypass injeksiya so'rash
     try {
         chrome.runtime.sendMessage({ action: "inject_main_shield" }, () => {
             void chrome.runtime.lastError;
@@ -208,8 +211,6 @@ function activateShieldV15() {
             return;
         }
 
-        // Maxfiy tugmalar (Alt, Ctrl, Meta, PrintScreen, F12) saytga sezilmasligi uchun to'xtatiladi,
-        // lekin oddiy harf va raqamlar yozishga ruxsat beriladi
         if (e.altKey || e.ctrlKey || e.metaKey || e.key === 'PrintScreen' || e.key === 'F12') {
             e.stopImmediatePropagation();
         }
@@ -269,7 +270,6 @@ function sanitizeDisplayText(text) {
     if (!text) return "";
     const str = String(text).trim();
     if (!str) return "";
-    // Hech qachon ekranga texnik xatolik matnini chiqarmaymiz
     if (/^(xatolik|error|invalid|cannot|failed|javob yo'q|javob kelmadi|gemini|chatgpt)/i.test(str)) {
         return "-";
     }
@@ -279,6 +279,14 @@ function sanitizeDisplayText(text) {
 function displayAnswerWithAutoWipe(text) {
     if (!isTopFrame) return;
     const cleanText = sanitizeDisplayText(text);
+    // Agar hozirgina haqiqiy javob ko'rsatilgan bo'lsa (3 soniya ichida), uni "-" bilan ustidan yozib yubormaymiz!
+    if (cleanText === "-" && (Date.now() - lastValidAnswerShownAt < 3000)) {
+        return;
+    }
+    if (cleanText && cleanText !== ".." && cleanText !== "-") {
+        lastValidAnswerShownAt = Date.now();
+    }
+
     const overlay = getOrCreateOverlay();
     overlay.innerText = cleanText;
     overlay.style.display = isOverlayHidden ? "none" : "block";
@@ -303,7 +311,7 @@ async function captureAndSolve() {
     isSolving = true;
     displayAnswerWithAutoWipe("..");
 
-    const safetyUnlock = setTimeout(() => { isSolving = false; }, 60000);
+    const safetyUnlock = setTimeout(() => { isSolving = false; }, 65000);
 
     try {
         chrome.runtime.sendMessage({ action: "capture" }, (response) => {
@@ -312,14 +320,11 @@ async function captureAndSolve() {
             void chrome.runtime.lastError;
             if (response && response.answer) {
                 displayAnswerWithAutoWipe(response.answer);
-            } else {
-                displayAnswerWithAutoWipe("-");
             }
         });
     } catch (e) {
         clearTimeout(safetyUnlock);
         isSolving = false;
-        displayAnswerWithAutoWipe("-");
     }
 }
 
@@ -372,16 +377,9 @@ function createStealthControlBar() {
         background: transparent;
     `;
 
-    // 1. Solve (Rasmga olib yechish - Alt + S)
     const btnSolve = createStealthBtn("·", () => captureAndSolve());
-
-    // 2. Fetch (Javobni olish / Qayta tekshirish - Alt + A)
     const btnFetch = createStealthBtn("·", () => fetchAnswerNow());
-
-    // 3. Toggle (Yashirish / Ko'rsatish - Alt + D)
     const btnToggle = createStealthBtn("·", () => toggleOverlay());
-
-    // 4. Clean (Yopish va tozalash - Alt + X)
     const btnClean = createStealthBtn("·", () => closeAndCleanAI());
 
     controlBarEl.appendChild(btnSolve);
