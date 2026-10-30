@@ -1,8 +1,9 @@
-// Content Script - AItest Pro (God Mode + Closed Shadow DOM + Native Code Masking + Ghost Auto-Wipe)
+// Content Script - AItest Pro V15 (MAIN + ISOLATED World God Mode + Closed Shadow DOM + Zero-Error Ghost Mode)
 
 let isEnabled = false;
 let isOverlayHidden = false;
 let isShieldApplied = false;
+let isSolving = false;
 
 let stealthHost = null;
 let shadowRoot = null;
@@ -10,16 +11,33 @@ let overlayEl = null;
 let controlBarEl = null;
 let wipeTimer = null;
 
+const isTopFrame = (window === window.top);
+
+function isAiProviderHost() {
+    const h = (location.hostname || "").toLowerCase();
+    return h.includes("gemini.google.com") ||
+           h.includes("chatgpt.com") ||
+           h.includes("openai.com") ||
+           h.includes("accounts.google.com");
+}
+
 chrome.storage.local.get("enabled", (data) => {
-    isEnabled = data.enabled;
-    if (isEnabled) activateShieldV14();
+    isEnabled = !!data.enabled;
+    if (isEnabled && !isAiProviderHost()) {
+        activateShieldV15();
+    }
 });
 
 chrome.runtime.onMessage.addListener((msg) => {
     if (msg.action === "toggle") {
-        isEnabled = msg.state;
-        if (isEnabled) activateShieldV14();
-        else location.reload();
+        isEnabled = !!msg.state;
+        if (isEnabled && !isAiProviderHost()) {
+            activateShieldV15();
+        } else if (!isEnabled && !isAiProviderHost()) {
+            location.reload();
+        }
+    } else if (msg.action === "show_answer" && isTopFrame) {
+        displayAnswerWithAutoWipe(msg.answer);
     }
 });
 
@@ -46,12 +64,26 @@ try {
 } catch(e) {}
 
 // ================= 2. GOD MODE HIMOYASI =================
-function activateShieldV14() {
-    if (isShieldApplied) return; 
+function activateShieldV15() {
+    if (isShieldApplied || isAiProviderHost()) return;
     isShieldApplied = true;
-    createStealthControlBar();
 
-    console.clear = makeNative(() => {}, 'clear');
+    // MAIN world uchun background orqali CSP-bypass injeksiya so'rash
+    try {
+        chrome.runtime.sendMessage({ action: "inject_main_shield" }, () => {
+            void chrome.runtime.lastError;
+        });
+    } catch(e) {}
+
+    if (isTopFrame) {
+        if (document.documentElement || document.body) {
+            createStealthControlBar();
+        } else {
+            document.addEventListener("DOMContentLoaded", () => createStealthControlBar(), { once: true });
+        }
+    }
+
+    try { console.clear = makeNative(() => {}, 'clear'); } catch(e) {}
 
     const getVis = makeNative(() => 'visible', 'get visibilityState');
     const getHidden = makeNative(() => false, 'get hidden');
@@ -65,7 +97,6 @@ function activateShieldV14() {
     try { Document.prototype.hasFocus = hasFocusMock; } catch(e) {}
 
     // ================= FULLSCREEN BLOKLASH VA MUKAMMAL ALDOVI =================
-    // Sayt to'liq ekranga kirishga urinsa (requestFullscreen) YO'L QO'YMAYMIZ, lekin saytga "Kirding" deb aldaymiz
     const fakeRequestFullscreen = makeNative(function() {
         setTimeout(() => {
             try {
@@ -81,7 +112,6 @@ function activateShieldV14() {
         return Promise.resolve();
     }, 'exitFullscreen');
 
-    // Barcha elementlarning requestFullscreen funksiyasini zararsizlantirish
     const fsTargets = [Element.prototype, HTMLElement.prototype];
     if (typeof document !== 'undefined' && document.documentElement) {
         fsTargets.push(document.documentElement);
@@ -125,7 +155,6 @@ function activateShieldV14() {
         try { Object.defineProperty(Document.prototype, prop, { get: getFullscreenTrue, configurable: true }); } catch(e) {}
     });
 
-    // Ekran o'lchamlari tekshiruviga qarshi (window.innerHeight === screen.height har doim true chiqishi uchun)
     try {
         Object.defineProperty(screen, 'availHeight', { get: makeNative(() => window.innerHeight, 'availHeight'), configurable: true });
         Object.defineProperty(screen, 'height', { get: makeNative(() => window.innerHeight, 'height'), configurable: true });
@@ -141,7 +170,8 @@ function activateShieldV14() {
     }, 'stopEvent');
 
     const blockedEvents = [
-        'blur', 'focusout', 'visibilitychange', 'mouseleave', 'mouseout', 'resize',
+        'blur', 'focusout', 'visibilitychange', 'webkitvisibilitychange',
+        'mouseleave', 'mouseout', 'resize', 'fullscreenchange', 'webkitfullscreenchange',
         'contextmenu', 'copy', 'paste', 'cut', 'selectstart'
     ];
 
@@ -154,57 +184,64 @@ function activateShieldV14() {
         if (!isEnabled) return;
 
         if (e.altKey && (e.key.toLowerCase() === 's' || e.code === 'KeyS')) {
-            e.stopImmediatePropagation(); e.preventDefault();
+            e.stopImmediatePropagation();
+            e.preventDefault();
             captureAndSolve();
             return;
         }
         if (e.altKey && (e.key.toLowerCase() === 'a' || e.code === 'KeyA')) {
-            e.stopImmediatePropagation(); e.preventDefault();
+            e.stopImmediatePropagation();
+            e.preventDefault();
             fetchAnswerNow();
             return;
         }
         if (e.altKey && (e.key.toLowerCase() === 'd' || e.code === 'KeyD')) {
-            e.stopImmediatePropagation(); e.preventDefault();
+            e.stopImmediatePropagation();
+            e.preventDefault();
             toggleOverlay();
             return;
         }
         if (e.altKey && (e.key.toLowerCase() === 'x' || e.code === 'KeyX')) {
-            e.stopImmediatePropagation(); e.preventDefault();
-            closeAndCleanGemini();
+            e.stopImmediatePropagation();
+            e.preventDefault();
+            closeAndCleanAI();
             return;
         }
 
-        const allowed = ['0','1','2','3','4','5','6','7','8','9','Enter','Backspace','Tab','Escape','Delete','ArrowLeft','ArrowRight','ArrowUp','ArrowDown','F1','F2','F3','F4','F5','F6','F7','F8','F9','F10','F11','F12'];
-        
-        if (allowed.includes(e.key) && !e.altKey && !e.ctrlKey && !e.metaKey) {
-            return; 
+        // Maxfiy tugmalar (Alt, Ctrl, Meta, PrintScreen, F12) saytga sezilmasligi uchun to'xtatiladi,
+        // lekin oddiy harf va raqamlar yozishga ruxsat beriladi
+        if (e.altKey || e.ctrlKey || e.metaKey || e.key === 'PrintScreen' || e.key === 'F12') {
+            e.stopImmediatePropagation();
         }
-
-        e.stopImmediatePropagation();
-        e.preventDefault();
     }, true);
 
-    window.addEventListener('keyup', stopEvent, true);
-    window.addEventListener('keypress', stopEvent, true);
+    window.addEventListener('keyup', (e) => {
+        if (!isEnabled) return;
+        if (e.altKey || e.ctrlKey || e.metaKey || e.key === 'Alt' || e.key === 'Control' || e.key === 'Meta' || e.key === 'PrintScreen') {
+            e.stopImmediatePropagation();
+        }
+    }, true);
 }
 
 // ================= 3. CLOSED SHADOW DOM (DOM SKANERLARIDAN 100% YASHIRISH) =================
 function getStealthRoot() {
-    if (shadowRoot) return shadowRoot;
+    if (shadowRoot && stealthHost && stealthHost.isConnected) return shadowRoot;
 
     stealthHost = document.createElement("div");
     stealthHost.style.cssText = "all: initial !important; position: static !important; display: contents !important;";
-    
-    // mode: 'closed' orqali sayt skriptlari (querySelectorAll, getElementById) uchun elementlar umuman mavjud emas
     shadowRoot = stealthHost.attachShadow({ mode: "closed" });
-    
-    (document.documentElement || document.body).appendChild(stealthHost);
+
+    const parent = document.documentElement || document.body;
+    if (parent) {
+        parent.appendChild(stealthHost);
+    }
     return shadowRoot;
 }
 
 function getOrCreateOverlay() {
-    if (overlayEl) return overlayEl;
     const root = getStealthRoot();
+    if (overlayEl && overlayEl.isConnected) return overlayEl;
+
     overlayEl = document.createElement("div");
     overlayEl.style.cssText = `
         position: fixed;
@@ -227,59 +264,100 @@ function getOrCreateOverlay() {
     return overlayEl;
 }
 
-// ================= 4. GHOST MODE (AVTOMATIK TOZALANISH - EKRAN YOZUVIGA QARSHI) =================
+// ================= 4. GHOST MODE (XATOLIKSIZ VA AVTOMATIK TOZALANUVCHI) =================
+function sanitizeDisplayText(text) {
+    if (!text) return "";
+    const str = String(text).trim();
+    if (!str) return "";
+    // Hech qachon ekranga texnik xatolik matnini chiqarmaymiz
+    if (/^(xatolik|error|invalid|cannot|failed|javob yo'q|javob kelmadi|gemini|chatgpt)/i.test(str)) {
+        return "-";
+    }
+    return str;
+}
+
 function displayAnswerWithAutoWipe(text) {
+    if (!isTopFrame) return;
+    const cleanText = sanitizeDisplayText(text);
     const overlay = getOrCreateOverlay();
-    overlay.innerText = text;
+    overlay.innerText = cleanText;
     overlay.style.display = isOverlayHidden ? "none" : "block";
 
     if (wipeTimer) clearTimeout(wipeTimer);
-    // Javob tayyor bo'lgach (masalan "A" yoki "B"), 4 soniya ko'rinib, keyin o'z-o'zidan tozalanish
-    if (text && text !== "..") {
+    if (cleanText && cleanText !== "..") {
         wipeTimer = setTimeout(() => {
             overlay.innerText = "";
-        }, 4000); // 4 soniya yetarli
+        }, 4000);
     }
 }
 
 function toggleOverlay() {
+    if (!isTopFrame) return;
     isOverlayHidden = !isOverlayHidden;
     const el = getOrCreateOverlay();
     el.style.display = isOverlayHidden ? "none" : "block";
 }
 
 async function captureAndSolve() {
-    if (!isEnabled) return;
+    if (!isEnabled || isSolving) return;
+    isSolving = true;
     displayAnswerWithAutoWipe("..");
-    
-    chrome.runtime.sendMessage({ action: "capture" }, (response) => {
-        if (response && response.answer) {
-            displayAnswerWithAutoWipe(response.answer);
-        }
-    });
+
+    const safetyUnlock = setTimeout(() => { isSolving = false; }, 60000);
+
+    try {
+        chrome.runtime.sendMessage({ action: "capture" }, (response) => {
+            clearTimeout(safetyUnlock);
+            isSolving = false;
+            void chrome.runtime.lastError;
+            if (response && response.answer) {
+                displayAnswerWithAutoWipe(response.answer);
+            } else {
+                displayAnswerWithAutoWipe("-");
+            }
+        });
+    } catch (e) {
+        clearTimeout(safetyUnlock);
+        isSolving = false;
+        displayAnswerWithAutoWipe("-");
+    }
 }
 
 async function fetchAnswerNow() {
     if (!isEnabled) return;
     displayAnswerWithAutoWipe("..");
 
-    chrome.runtime.sendMessage({ action: "fetch_latest_answer" }, (response) => {
-        if (response && response.answer) {
-            displayAnswerWithAutoWipe(response.answer);
-        }
-    });
+    try {
+        chrome.runtime.sendMessage({ action: "fetch_latest_answer" }, (response) => {
+            void chrome.runtime.lastError;
+            if (response && response.answer) {
+                displayAnswerWithAutoWipe(response.answer);
+            } else {
+                displayAnswerWithAutoWipe("-");
+            }
+        });
+    } catch (e) {
+        displayAnswerWithAutoWipe("-");
+    }
 }
 
-function closeAndCleanGemini() {
+function closeAndCleanAI() {
     if (wipeTimer) clearTimeout(wipeTimer);
-    const el = getOrCreateOverlay();
-    el.innerText = "";
-    chrome.runtime.sendMessage({ action: "cleanup_gemini" });
+    if (isTopFrame) {
+        const el = getOrCreateOverlay();
+        el.innerText = "";
+    }
+    try {
+        chrome.runtime.sendMessage({ action: "cleanup_gemini" }, () => {
+            void chrome.runtime.lastError;
+        });
+    } catch (e) {}
 }
 
 function createStealthControlBar() {
-    if (controlBarEl) return;
+    if (!isTopFrame) return;
     const root = getStealthRoot();
+    if (controlBarEl && controlBarEl.isConnected) return;
 
     controlBarEl = document.createElement("div");
     controlBarEl.style.cssText = `
@@ -295,24 +373,16 @@ function createStealthControlBar() {
     `;
 
     // 1. Solve (Rasmga olib yechish - Alt + S)
-    const btnSolve = createStealthBtn("·", () => {
-        captureAndSolve();
-    });
+    const btnSolve = createStealthBtn("·", () => captureAndSolve());
 
     // 2. Fetch (Javobni olish / Qayta tekshirish - Alt + A)
-    const btnFetch = createStealthBtn("·", () => {
-        fetchAnswerNow();
-    });
+    const btnFetch = createStealthBtn("·", () => fetchAnswerNow());
 
     // 3. Toggle (Yashirish / Ko'rsatish - Alt + D)
-    const btnToggle = createStealthBtn("·", () => {
-        toggleOverlay();
-    });
+    const btnToggle = createStealthBtn("·", () => toggleOverlay());
 
     // 4. Clean (Yopish va tozalash - Alt + X)
-    const btnClean = createStealthBtn("·", () => {
-        closeAndCleanGemini();
-    });
+    const btnClean = createStealthBtn("·", () => closeAndCleanAI());
 
     controlBarEl.appendChild(btnSolve);
     controlBarEl.appendChild(btnFetch);

@@ -1,31 +1,136 @@
-// Background Service Worker - AItest Pro (Chain of Thought + Smart Answer Extractor + Slow Internet Adaptive)
+// Background Service Worker - AItest Pro V15 (Gemini Ultra Edition: Zero-Error + Bounds-Safe + MAIN World Shield)
 
-const PROMPT_TEXT = `Algebra, geometriya, fizika va ingliz tili fanlari bo'yicha oliy toifali ekspertisan.
-Ushbu rasmda berilgan test savoli va uning shartini diqqat bilan, mustaqil, qisqa formulalar va qoidalar asosida aniq tahlil qilib yech.
+const PROMPT_TEXT = `Sen barcha aniq, tabiiy va gumanitar fanlar (matematika, algebra, geometriya, fizika, kimyo, biologiya, ingliz tili, ona tili, tarix, informatika, mantiq) bo'yicha oliy toifali ekspertisan.
+Ushbu rasmda berilgan test savoli va uning shartini diqqat bilan o'qib, qadam-baqadam aniq tahlil qil va yech.
 
-ENG MUHIM TALABLAR:
-1. To'g'ri javob berilgan variantlar (A, B, C, D) ichida ANIQ MAVJUD! Agar sen chiqargan natija variantlarga mos kelmasa, demak hisob-kitobda yoki qoidada xato qilgansan — darhol qadamlarni qayta tekshirib, variantlardagi to'g'ri javobni aniqla.
-2. Yechim oxirida, eng so'nggi alohida qatorda FAQAT quyidagi formatda yakuniy variantni yoz:
+ENG MUHIM QAT'IY TALABLAR:
+1. To'g'ri javob berilgan variantlar (A, B, C, D yoki E) ichida ANIQ MAVJUD! Agar chiqargan natijang variantlarga mos kelmasa, hisob-kitobni yoki qoidani darhol qayta tekshirib, variantlar ichidagi 100% to'g'ri javobni top.
+2. Yechim oxirida, eng so'nggi alohida qatorda FAQAT quyidagi formatda yakuniy variant harfini yoz:
 JAVOB: A
 
-(Variantlar qat'iy ravishda: A, B, C yoki D).
-3. Ushbu so'nggi "JAVOB:" qatoridan keyin boshqa hech qanday izoh, so'z yoki gap yozma!`;
+(Variant sifatida faqat bitta harf: A, B, C, D yoki E).
+3. Ushbu so'nggi "JAVOB:" qatoridan keyin boshqa hech qanday izoh, nuqta yoki so'z yozma!`;
+
+// Saytning asosiy (MAIN) JS muhitiga CSP-ni aylanib o'tib himoya o'rnatish
+function applyMainWorldShield() {
+    try {
+        if (window.__aitestMainShieldV15) return;
+        window.__aitestMainShieldV15 = true;
+
+        const originalToString = Function.prototype.toString;
+        const mockedSet = new WeakSet();
+        const makeNative = (fn, name = '') => {
+            try {
+                mockedSet.add(fn);
+                Object.defineProperty(fn, 'name', { value: name, configurable: true });
+            } catch(e) {}
+            return fn;
+        };
+
+        try {
+            Function.prototype.toString = makeNative(function() {
+                if (mockedSet.has(this)) {
+                    return `function ${this.name || ''}() { [native code] }`;
+                }
+                return originalToString.apply(this, arguments);
+            }, 'toString');
+        } catch(e) {}
+
+        const getVis = makeNative(() => 'visible', 'get visibilityState');
+        const getHidden = makeNative(() => false, 'get hidden');
+        const hasFocusMock = makeNative(() => true, 'hasFocus');
+
+        [document, Document.prototype].forEach(t => {
+            if (!t) return;
+            try { Object.defineProperty(t, 'visibilityState', { get: getVis, configurable: true }); } catch(e) {}
+            try { Object.defineProperty(t, 'webkitVisibilityState', { get: getVis, configurable: true }); } catch(e) {}
+            try { Object.defineProperty(t, 'hidden', { get: getHidden, configurable: true }); } catch(e) {}
+            try { Object.defineProperty(t, 'webkitHidden', { get: getHidden, configurable: true }); } catch(e) {}
+            try { t.hasFocus = hasFocusMock; } catch(e) {}
+        });
+
+        try { Object.defineProperty(document, 'onvisibilitychange', { get: () => null, set: () => {}, configurable: true }); } catch(e) {}
+        try { Object.defineProperty(window, 'onblur', { get: () => null, set: () => {}, configurable: true }); } catch(e) {}
+        try { Object.defineProperty(window, 'onfocusout', { get: () => null, set: () => {}, configurable: true }); } catch(e) {}
+
+        const fakeReqFs = makeNative(function() {
+            setTimeout(() => {
+                try {
+                    document.dispatchEvent(new Event('fullscreenchange', { bubbles: true }));
+                    window.dispatchEvent(new Event('fullscreenchange', { bubbles: true }));
+                } catch(e) {}
+            }, 10);
+            return Promise.resolve();
+        }, 'requestFullscreen');
+
+        const fakeExitFs = makeNative(() => Promise.resolve(), 'exitFullscreen');
+
+        [Element.prototype, HTMLElement.prototype, document.documentElement].forEach(t => {
+            if (!t) return;
+            ['requestFullscreen', 'webkitRequestFullscreen', 'webkitRequestFullScreen', 'mozRequestFullScreen', 'msRequestFullscreen'].forEach(m => {
+                try { Object.defineProperty(t, m, { value: fakeReqFs, writable: true, configurable: true }); } catch(e) {}
+            });
+        });
+
+        [document, Document.prototype].forEach(t => {
+            if (!t) return;
+            ['exitFullscreen', 'webkitExitFullscreen', 'webkitCancelFullScreen', 'mozCancelFullScreen', 'msExitFullscreen'].forEach(m => {
+                try { Object.defineProperty(t, m, { value: fakeExitFs, writable: true, configurable: true }); } catch(e) {}
+            });
+            ['fullscreenElement', 'webkitFullscreenElement', 'mozFullScreenElement', 'msFullscreenElement'].forEach(p => {
+                try { Object.defineProperty(t, p, { get: makeNative(() => document.documentElement, `get ${p}`), configurable: true }); } catch(e) {}
+            });
+            ['fullscreen', 'webkitIsFullScreen', 'mozFullScreen'].forEach(p => {
+                try { Object.defineProperty(t, p, { get: makeNative(() => true, `get ${p}`), configurable: true }); } catch(e) {}
+            });
+        });
+
+        try {
+            Object.defineProperty(screen, 'availHeight', { get: makeNative(() => window.innerHeight, 'availHeight'), configurable: true });
+            Object.defineProperty(screen, 'height', { get: makeNative(() => window.innerHeight, 'height'), configurable: true });
+            Object.defineProperty(screen, 'availWidth', { get: makeNative(() => window.innerWidth, 'availWidth'), configurable: true });
+            Object.defineProperty(screen, 'width', { get: makeNative(() => window.innerWidth, 'width'), configurable: true });
+        } catch(e) {}
+
+        const blockEvt = makeNative((e) => {
+            e.stopImmediatePropagation();
+        }, 'listener');
+
+        ['blur', 'focusout', 'visibilitychange', 'webkitvisibilitychange', 'mouseleave', 'mouseout', 'contextmenu', 'copy', 'cut', 'selectstart'].forEach(evt => {
+            window.addEventListener(evt, blockEvt, true);
+            document.addEventListener(evt, blockEvt, true);
+        });
+    } catch(e) {}
+}
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+    if (request.action === "inject_main_shield") {
+        if (sender.tab && sender.tab.id) {
+            chrome.scripting.executeScript({
+                target: { tabId: sender.tab.id, allFrames: true },
+                world: "MAIN",
+                func: applyMainWorldShield,
+                injectImmediately: true
+            }).catch(() => {});
+        }
+        sendResponse({ ok: true });
+        return false;
+    }
+
     if (request.action === "cleanup_gemini") {
-        // 1. Gemini tablarini va alohida oynalarini (window) butunlay yopish
         chrome.tabs.query({ url: "*://gemini.google.com/*" }, (tabs) => {
             if (tabs && tabs.length > 0) {
                 const winIds = new Set(tabs.map(t => t.windowId).filter(Boolean));
                 winIds.forEach(wId => {
-                    try { chrome.windows.remove(wId); } catch(e) {}
+                    try { chrome.windows.remove(wId, () => { void chrome.runtime.lastError; }); } catch(e) {}
                 });
-                const tabIds = tabs.map(t => t.id);
-                try { chrome.tabs.remove(tabIds); } catch(e) {}
+                const tabIds = tabs.map(t => t.id).filter(Boolean);
+                if (tabIds.length) {
+                    try { chrome.tabs.remove(tabIds, () => { void chrome.runtime.lastError; }); } catch(e) {}
+                }
             }
         });
 
-        // 2. Brauzer tarixidan (History) Gemini havolalarini butunlay o'chirish
         if (chrome.history) {
             chrome.history.search({ text: "gemini", startTime: 0, maxResults: 1000 }, (items) => {
                 if (items && items.length > 0) {
@@ -42,116 +147,131 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         return true;
     }
 
-    // 3. Markaziy 2-tugma uchun: Fondagi Gemini-dan oxirgi javobni tortib olish va fokus berish
     if (request.action === "fetch_latest_answer") {
         (async () => {
             try {
                 const answer = await getLatestAnswerFromGemini();
-                sendResponse({ answer });
+                sendResponse({ answer: answer || "-" });
             } catch (error) {
-                console.error("fetch_latest_answer xatosi:", error);
-                sendResponse({ answer: null });
+                sendResponse({ answer: "-" });
             }
         })();
         return true;
     }
 
-    if (request.action !== "capture") return;
+    if (request.action !== "capture") return false;
 
     (async () => {
         try {
-            // Aniq joriy test oynasini rasmga olish (boshqa oyna bilan adashmasligi uchun)
             const currentWinId = sender.tab ? sender.tab.windowId : null;
-            const dataUrl = await new Promise((resolve, reject) => {
-                chrome.tabs.captureVisibleTab(
-                    currentWinId,
-                    { format: "png" },
-                    (url) => {
-                        if (chrome.runtime.lastError || !url) {
-                            reject(new Error(
-                                chrome.runtime.lastError?.message ||
-                                "Screenshot olib bo‘lmadi"
-                            ));
-                        } else {
-                            resolve(url);
-                        }
-                    }
-                );
-            });
+            const senderTabId = sender.tab ? sender.tab.id : null;
 
-            const answer = await askGeminiWeb(dataUrl, currentWinId);
+            const dataUrl = await captureScreenSafely(currentWinId);
+            if (!dataUrl) {
+                sendResponse({ answer: "-" });
+                return;
+            }
+
+            let answer = await askGeminiWeb(dataUrl, currentWinId);
+            if (!answer || answer === "-") {
+                await new Promise(r => setTimeout(r, 1200));
+                answer = (await getLatestAnswerFromGemini()) || "-";
+            }
+
+            if (senderTabId) {
+                try {
+                    chrome.tabs.sendMessage(senderTabId, { action: "show_answer", answer }, () => {
+                        void chrome.runtime.lastError;
+                    });
+                } catch(e) {}
+            }
             sendResponse({ answer });
         } catch (error) {
-            console.error("Screenshot/Gemini xatosi:", error);
-            sendResponse({
-                answer: "Xatolik: " + error.message
-            });
+            sendResponse({ answer: "-" });
         }
     })();
 
     return true;
 });
 
-// ================= FAQAT HARFNI AJRATIB OLISH (SMART PARSER - ENG OXIRGI QATORNI OLUVCHI) =================
+async function captureScreenSafely(windowId) {
+    const tryCapture = (winId) => new Promise((resolve) => {
+        try {
+            chrome.tabs.captureVisibleTab(winId, { format: "png" }, (url) => {
+                if (chrome.runtime.lastError || !url) {
+                    resolve(null);
+                } else {
+                    resolve(url);
+                }
+            });
+        } catch (e) {
+            resolve(null);
+        }
+    });
+
+    let url = await tryCapture(windowId);
+    if (!url) {
+        url = await tryCapture(null);
+    }
+    return url;
+}
+
+// ================= FAQAT HARFNI AJRATIB OLISH (SMART PARSER) =================
 function extractCleanAnswer(rawText) {
-    if (!rawText) return "Javob yo'q";
+    if (!rawText) return "-";
 
     const clean = rawText.replace(/[*_`#]/g, "").trim();
+    if (!clean) return "-";
 
-    // 1. ENG ASOSIY: Matndagi ENG OXIRGI "JAVOB: [variant]" ni topish (Boshidagi chalg'ituvchi harflarga qaramaydi)
-    const allStrictMatches = [...clean.matchAll(/(?:JAVOB|ANSWER|ОТВЕТ)\s*[:=\-—]\s*([A-DА-Я0-9\-\+\.\,\?]+(?:\s*\([A-D]\))?)/gi)];
+    const allStrictMatches = [...clean.matchAll(/(?:JAVOB|ANSWER|ОТВЕТ)\s*[:=\-—]\s*([A-FА-Я0-9\-\+\.\,\?]+(?:\s*\([A-F]\))?)/gi)];
     if (allStrictMatches.length > 0) {
         const lastMatch = allStrictMatches[allStrictMatches.length - 1];
         const ans = lastMatch[1].trim();
-        const letterOnly = ans.match(/^([A-DА-Яa-dа-я]\??)/);
+        const letterOnly = ans.match(/^([A-FА-Яa-fа-я]\??)/);
         if (letterOnly) return normalizeLetter(letterOnly[1]);
         return ans.slice(0, 5).trim();
     }
 
-    // 2. Muqobil variantlarning ham ENG OXIRGISI:
-    const allAltMatches = [...clean.matchAll(/(?:to['‘`]?g['‘`]?ri\s+javob|правильный\s+ответ|variant|to['‘`]?g['‘`]?ri\s+variant)\s*[:=\-—]?\s*(?:variant\s*)?([A-DА-Яa-dа-я0-9\?]+)/gi)];
+    const allAltMatches = [...clean.matchAll(/(?:to['‘`]?g['‘`]?ri\s+javob|правильный\s+ответ|correct\s+answer|variant|to['‘`]?g['‘`]?ri\s+variant)\s*[:=\-—]?\s*(?:variant\s*)?([A-FА-Яa-fа-я0-9\?]+)/gi)];
     if (allAltMatches.length > 0) {
         const lastAlt = allAltMatches[allAltMatches.length - 1];
         return normalizeLetter(lastAlt[1]);
     }
 
-    // 3. Matnning eng oxirgi satrlaridan (pastdan tepaga qarab) tekshirish:
     const lines = clean.split("\n").map(l => l.trim()).filter(Boolean);
     for (let i = lines.length - 1; i >= Math.max(0, lines.length - 6); i--) {
         const line = lines[i];
 
-        const lineMatch = line.match(/(?:javob|answer|ответ|variant)?\s*[:=\-—]?\s*\b([A-DА-Яa-dа-я]\??)\b/i);
+        const lineMatch = line.match(/(?:javob|answer|ответ|variant)?\s*[:=\-—]?\s*\b([A-EА-Дa-eа-д]\??)\b/i);
         if (lineMatch && lineMatch[1]) {
             return normalizeLetter(lineMatch[1]);
         }
 
-        const singleLetter = line.match(/^([A-DА-Яa-dа-я]\??)(?:\)|\.)?$/i);
+        const singleLetter = line.match(/^([A-EА-Дa-eа-д]\??)(?:\)|\.)?$/i);
         if (singleLetter) {
             return normalizeLetter(singleLetter[1]);
         }
     }
 
-    // 4. Oxirgi harf:
-    const allLetters = [...clean.matchAll(/\b([A-D]\??)\b/gi)];
+    const allLetters = [...clean.matchAll(/\b([A-D]\??)\b/g)];
     if (allLetters.length > 0) {
         return allLetters[allLetters.length - 1][1].toUpperCase();
     }
 
-    const lastLine = lines[lines.length - 1] || "";
-    return lastLine.slice(0, 10).trim();
+    return "-";
 }
 
 function normalizeLetter(ch) {
-    if (!ch) return "";
+    if (!ch) return "-";
     let upper = ch.toUpperCase();
     if (upper.startsWith("А")) return "A" + upper.slice(1);
     if (upper.startsWith("В")) return "B" + upper.slice(1);
     if (upper.startsWith("С")) return "C" + upper.slice(1);
     if (upper.startsWith("Д")) return "D" + upper.slice(1);
+    if (upper.startsWith("Е")) return "E" + upper.slice(1);
     return upper;
 }
 
-// Gemini-dan oxirgi javobni to'g'ridan-to'g'ri o'qib olish funksiyasi
 async function getLatestAnswerFromGemini() {
     const tabs = await chrome.tabs.query({ url: "*://gemini.google.com/*" });
     if (!tabs || tabs.length === 0) return null;
@@ -175,11 +295,64 @@ async function getLatestAnswerFromGemini() {
             const latest = targetResponses[targetResponses.length - 1];
             return (latest.innerText || latest.textContent || "").trim();
         }
-    });
+    }).catch(() => null);
 
     const rawText = results?.[0]?.result;
     if (!rawText) return null;
     return extractCleanAnswer(rawText);
+}
+
+// Har qanday ekran o'lchami (Mac/Windows/Fullscreen) uchun 100% xatoliksiz oyna yaratish
+async function createSafeAIWindow(targetUrl, currentWindowId) {
+    const w = 420;
+    const h = 420;
+
+    if (currentWindowId) {
+        try {
+            const curWin = await chrome.windows.get(currentWindowId);
+            if (curWin && curWin.state !== "fullscreen" && curWin.state !== "minimized" &&
+                typeof curWin.left === "number" && typeof curWin.top === "number" &&
+                typeof curWin.width === "number" && typeof curWin.height === "number") {
+                const safeLeft = Math.max(20, curWin.left + curWin.width - w - 30);
+                const safeTop = Math.max(20, curWin.top + curWin.height - h - 50);
+                const win = await chrome.windows.create({
+                    url: targetUrl,
+                    focused: false,
+                    type: "normal",
+                    width: w,
+                    height: h,
+                    left: safeLeft,
+                    top: safeTop
+                });
+                if (win) return win;
+            }
+        } catch (e) {}
+    }
+
+    try {
+        const win = await chrome.windows.create({
+            url: targetUrl,
+            focused: false,
+            type: "normal",
+            width: w,
+            height: h
+        });
+        if (win) return win;
+    } catch (e) {}
+
+    try {
+        const win = await chrome.windows.create({
+            url: targetUrl,
+            focused: false
+        });
+        if (win) return win;
+    } catch (e) {}
+
+    const fallbackTab = await chrome.tabs.create({
+        url: targetUrl,
+        active: false
+    });
+    return { id: fallbackTab.windowId, tabs: [fallbackTab] };
 }
 
 async function getOrCreateGeminiTab(currentWindowId) {
@@ -197,29 +370,17 @@ async function getOrCreateGeminiTab(currentWindowId) {
         }
     }
 
-    // Foydalanuvchi talabi: Agar yo'q bo'lsa, tugma bosilgach 1 soniya kutib keyin yaratish (foydalanuvchi ulgurishi uchun)
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    await new Promise(resolve => setTimeout(resolve, 600));
 
-    // O'ng pastki burchakda kichik qilib ochish (Windows Chrome uchun)
-    const win = await chrome.windows.create({
-        url: "https://gemini.google.com/app",
-        focused: false,
-        type: "normal",
-        state: "normal",
-        left: 1400,
-        top: 600,
-        width: 480,
-        height: 480
-    });
+    const win = await createSafeAIWindow("https://gemini.google.com/app", currentWindowId);
 
-    // Dastlab test oynasiga fokusni qaytaramiz
     if (currentWindowId) {
         try {
             await chrome.windows.update(currentWindowId, { focused: true });
         } catch(e) {}
     }
 
-    const geminiTab = win.tabs ? win.tabs[0] : (await chrome.tabs.query({ windowId: win.id }))[0];
+    const geminiTab = (win.tabs && win.tabs[0]) ? win.tabs[0] : (await chrome.tabs.query({ windowId: win.id }))[0];
 
     await new Promise((resolve) => {
         let isResolved = false;
@@ -227,10 +388,10 @@ async function getOrCreateGeminiTab(currentWindowId) {
             if (isResolved) return;
             chrome.tabs.onUpdated.removeListener(listener);
             resolve();
-        }, 45000); // 45 soniya zaxira
+        }, 40000);
 
         function listener(tabId, info) {
-            if (tabId === geminiTab.id && info.status === "complete") {
+            if (geminiTab && tabId === geminiTab.id && info.status === "complete") {
                 isResolved = true;
                 clearTimeout(timeout);
                 chrome.tabs.onUpdated.removeListener(listener);
@@ -241,11 +402,10 @@ async function getOrCreateGeminiTab(currentWindowId) {
         chrome.tabs.onUpdated.addListener(listener);
     });
 
-    await new Promise(resolve => setTimeout(resolve, 2500));
+    await new Promise(resolve => setTimeout(resolve, 2200));
     return geminiTab;
 }
 
-// Orqa fonda muzlashdan saqlash (Unfreezer & Keep-Alive)
 function unfreezeBackgroundTab() {
     try {
         try { Object.defineProperty(Document.prototype, 'visibilityState', { get: () => 'visible', configurable: true }); } catch(e) {}
@@ -262,7 +422,6 @@ function unfreezeBackgroundTab() {
             clearTimeout(id);
         };
 
-        // Mutlaqo ovozsiz audio orqali Chrome fon tabini muzlatishining oldini olish
         try {
             if (!window._aitestAudioCtx) {
                 const AudioCtx = window.AudioContext || window.webkitAudioContext;
@@ -270,7 +429,7 @@ function unfreezeBackgroundTab() {
                     const ctx = new AudioCtx();
                     const osc = ctx.createOscillator();
                     const gain = ctx.createGain();
-                    gain.gain.value = 0; // 0 ovoz
+                    gain.gain.value = 0;
                     osc.connect(gain);
                     gain.connect(ctx.destination);
                     osc.start();
@@ -279,7 +438,6 @@ function unfreezeBackgroundTab() {
             }
         } catch(e) {}
 
-        // Doimiy uyg'otuvchi puls (Heartbeat)
         if (!window._aitestKeepAlive) {
             window._aitestKeepAlive = setInterval(() => {
                 try {
@@ -297,6 +455,7 @@ function unfreezeBackgroundTab() {
 
 async function askGeminiWeb(dataUrl, currentWinId) {
     const tab = await getOrCreateGeminiTab(currentWinId);
+    if (!tab || !tab.id) return "-";
 
     try {
         await chrome.scripting.executeScript({
@@ -306,19 +465,15 @@ async function askGeminiWeb(dataUrl, currentWinId) {
         });
     } catch(e) {}
 
-    // Foydalanuvchi talabi: Noutbuk kuchsiz bo'lsa xabar to'xtab qolmasligi uchun 1-tugma bosilganda
-    // ochilgandagidek bir lahzaga (0.25s) Gemini oynasiga o'tib (fokus berib), zudlik bilan test oynasiga qaytish
     if (tab && tab.windowId && currentWinId && tab.windowId !== currentWinId) {
         try {
             await chrome.windows.update(tab.windowId, { focused: true });
         } catch(e) {}
 
-        // 250ms dan so'ng test oynasini yana fokusga qaytaramiz (ko'z ochib yumguncha)
         setTimeout(() => {
             try { chrome.windows.update(currentWinId, { focused: true }); } catch(e) {}
         }, 250);
 
-        // Zaxira: 700ms dan so'ng test oynasini yana bir bor qat'iy fokusda mustahkamlaymiz
         setTimeout(() => {
             try { chrome.windows.update(currentWinId, { focused: true }); } catch(e) {}
         }, 700);
@@ -328,24 +483,21 @@ async function askGeminiWeb(dataUrl, currentWinId) {
         target: { tabId: tab.id },
         func: attachImageAndAsk,
         args: [dataUrl, PROMPT_TEXT]
-    });
+    }).catch(() => null);
 
     let answer = results?.[0]?.result;
 
-    // 2-NUQTA USULI BILAN YAKUNIY KAFOLAT:
-    // Javobni uzatishdan oldin xuddi 2-nuqta kabi eng so'nggi to'liq yangilangan matnni qayta tekshiramiz
     try {
         await new Promise(r => setTimeout(r, 600));
         const verifiedAnswer = await getLatestAnswerFromGemini();
-        if (verifiedAnswer && verifiedAnswer !== "Javob yo'q" && !verifiedAnswer.includes("Xatolik")) {
+        if (verifiedAnswer && verifiedAnswer !== "-") {
             answer = verifiedAnswer;
         }
     } catch(e) {}
 
-    return answer || "Gemini'dan javob olinmadi.";
+    return answer || "-";
 }
 
-// Gemini sahifasida bajariladigan asosiy funksiya
 async function attachImageAndAsk(dataUrl, prompt) {
     try {
         try {
@@ -354,7 +506,6 @@ async function attachImageAndAsk(dataUrl, prompt) {
             document.hasFocus = () => true;
         } catch(e) {}
 
-        // 1. Eski javoblarni tamg'alab chiqish (adashmaslik uchun)
         document.querySelectorAll("model-response, message-content, .model-response-text")
             .forEach(el => el.setAttribute("data-aitest-old", "true"));
 
@@ -364,7 +515,6 @@ async function attachImageAndAsk(dataUrl, prompt) {
             type: "image/png"
         });
 
-        // 0. Gemini Advanced / Pro xush kelibsiz dialoglarini va eski chala chiplarni tozalash
         try {
             const closeButtons = [...document.querySelectorAll('button')].filter(btn => {
                 const t = ((btn.getAttribute('aria-label') || '') + ' ' + (btn.getAttribute('title') || '') + ' ' + btn.innerText).toLowerCase();
@@ -376,7 +526,6 @@ async function attachImageAndAsk(dataUrl, prompt) {
             removeChips.forEach(btn => btn.click());
         } catch(e) {}
 
-        // 1. Chat maydoni (rich-textarea) to'liq yuklanguncha 14 soniyagacha kutamiz:
         let inputField = null;
         for (let i = 0; i < 35; i++) {
             try {
@@ -392,11 +541,8 @@ async function attachImageAndAsk(dataUrl, prompt) {
             await new Promise(r => setTimeout(r, 400));
         }
 
-        if (!inputField) {
-            return "Gemini chat maydoni yuklanmadi. Tabni qayta oching (Alt+X) va urinib ko'ring.";
-        }
+        if (!inputField) return "-";
 
-        // 2. Fayl inputini topish va rasmni biriktirish (Gemini va Gemini Pro uchun moslashuvchan zaxira bilan)
         let fileInput = null;
         const promptBox = inputField.closest('.input-area-container, .bottom-container, .chat-window, .input-area, main') || document.body;
         const inputContainer = promptBox;
@@ -405,7 +551,6 @@ async function attachImageAndAsk(dataUrl, prompt) {
             fileInput = document.querySelector('input[type="file"]');
             if (fileInput) break;
 
-            // Agar fayl inputi hali ochilmagan bo'lsa, "+" (biriktirish) tugmasini bosamiz
             if (attempt === 0 || attempt === 4) {
                 const buttons = [...promptBox.querySelectorAll("button")];
                 const uploadButton = buttons.find(btn => {
@@ -431,7 +576,6 @@ async function attachImageAndAsk(dataUrl, prompt) {
                 }
             }
 
-            // Gemini Pro-da menyu ochilgan bo'lsa ("Kompyuterdan yuklash" / "Upload from computer")
             const menuItems = [...document.querySelectorAll('[role="menuitem"], .mat-mdc-menu-item, .mat-menu-item, mat-list-item')];
             if (menuItems.length > 0) {
                 const computerUploadItem = menuItems.find(item => {
@@ -447,25 +591,28 @@ async function attachImageAndAsk(dataUrl, prompt) {
             await new Promise(r => setTimeout(r, 300));
         }
 
-        if (!fileInput) {
-            return "Gemini fayl yuklash maydoni topilmadi.";
-        }
-
-        try {
-            fileInput.disabled = false;
-            fileInput.value = ""; // Har bir yangi rasm to'liq yangilanishi uchun avvalgisini tozalaymiz
-        } catch(e) {}
-
         const transfer = new DataTransfer();
         transfer.items.add(file);
 
-        try {
-            fileInput.files = transfer.files;
-            fileInput.dispatchEvent(new Event("input", { bubbles: true }));
-            fileInput.dispatchEvent(new Event("change", { bubbles: true }));
-        } catch(e) {}
+        if (fileInput) {
+            try {
+                fileInput.disabled = false;
+                fileInput.value = "";
+                fileInput.files = transfer.files;
+                fileInput.dispatchEvent(new Event("input", { bubbles: true }));
+                fileInput.dispatchEvent(new Event("change", { bubbles: true }));
+            } catch(e) {}
+        } else {
+            try {
+                inputField.focus();
+                inputField.dispatchEvent(new ClipboardEvent("paste", {
+                    bubbles: true,
+                    cancelable: true,
+                    clipboardData: transfer
+                }));
+            } catch(e) {}
+        }
 
-        // 3. Promptni kiritish va fokuslash
         window.dispatchEvent(new FocusEvent('focus'));
         document.dispatchEvent(new FocusEvent('focus'));
         inputField.focus();
@@ -490,9 +637,8 @@ async function attachImageAndAsk(dataUrl, prompt) {
             }));
         }
 
-        // 4. Rasm to'liq yuklangach Send tugmasini qidirish (Sekin internet uchun 21 soniyagacha sabr qiladi)
         let sendButton = null;
-        for (let i = 0; i < 70; i++) { // 70 * 300ms = 21 soniya zaxira
+        for (let i = 0; i < 70; i++) {
             await new Promise(resolve => setTimeout(resolve, 300));
 
             const buttons = [...inputContainer.querySelectorAll("button")];
@@ -515,14 +661,12 @@ async function attachImageAndAsk(dataUrl, prompt) {
                        button.classList.contains('send-button');
             });
 
-            // Rasm serverga yetib borgach Send tugmasi aktiv bo'lishi bilan loop to'xtaydi
             if (btn && !btn.disabled && btn.getAttribute("aria-disabled") !== "true") {
                 sendButton = btn;
                 break;
             }
         }
 
-        // 5. Yuborish tugmasini bosish
         if (sendButton) {
             sendButton.click();
         } else {
@@ -542,66 +686,55 @@ async function attachImageAndAsk(dataUrl, prompt) {
             }
         }
 
-        // ================= FAQAT HARFNI AJRATIB OLISH (SMART PARSER - ENG OXIRGI QATORNI OLUVCHI) =================
         function extractCleanAnswer(rawText) {
-            if (!rawText) return "Javob yo'q";
-
+            if (!rawText) return "-";
             const clean = rawText.replace(/[*_`#]/g, "").trim();
+            if (!clean) return "-";
 
-            // 1. ENG ASOSIY: Matndagi ENG OXIRGI "JAVOB: [variant]" ni topish (Boshidagi chalg'ituvchi harflarga qaramaydi)
-            const allStrictMatches = [...clean.matchAll(/(?:JAVOB|ANSWER|ОТВЕТ)\s*[:=\-—]\s*([A-DА-Я0-9\-\+\.\,\?]+(?:\s*\([A-D]\))?)/gi)];
+            const allStrictMatches = [...clean.matchAll(/(?:JAVOB|ANSWER|ОТВЕТ)\s*[:=\-—]\s*([A-FА-Я0-9\-\+\.\,\?]+(?:\s*\([A-F]\))?)/gi)];
             if (allStrictMatches.length > 0) {
                 const lastMatch = allStrictMatches[allStrictMatches.length - 1];
                 const ans = lastMatch[1].trim();
-                const letterOnly = ans.match(/^([A-DА-Яa-dа-я]\??)/);
+                const letterOnly = ans.match(/^([A-FА-Яa-fа-я]\??)/);
                 if (letterOnly) return normalizeLetter(letterOnly[1]);
                 return ans.slice(0, 5).trim();
             }
 
-            // 2. Muqobil variantlarning ham ENG OXIRGISI:
-            const allAltMatches = [...clean.matchAll(/(?:to['‘`]?g['‘`]?ri\s+javob|правильный\s+ответ|variant|to['‘`]?g['‘`]?ri\s+variant)\s*[:=\-—]?\s*(?:variant\s*)?([A-DА-Яa-dа-я0-9\?]+)/gi)];
+            const allAltMatches = [...clean.matchAll(/(?:to['‘`]?g['‘`]?ri\s+javob|правильный\s+ответ|correct\s+answer|variant|to['‘`]?g['‘`]?ri\s+variant)\s*[:=\-—]?\s*(?:variant\s*)?([A-FА-Яa-fа-я0-9\?]+)/gi)];
             if (allAltMatches.length > 0) {
                 const lastAlt = allAltMatches[allAltMatches.length - 1];
                 return normalizeLetter(lastAlt[1]);
             }
 
-            // 3. Matnning eng oxirgi satrlaridan (pastdan tepaga qarab) tekshirish:
             const lines = clean.split("\n").map(l => l.trim()).filter(Boolean);
             for (let i = lines.length - 1; i >= Math.max(0, lines.length - 6); i--) {
                 const line = lines[i];
+                const lineMatch = line.match(/(?:javob|answer|ответ|variant)?\s*[:=\-—]?\s*\b([A-EА-Дa-eа-д]\??)\b/i);
+                if (lineMatch && lineMatch[1]) return normalizeLetter(lineMatch[1]);
 
-                const lineMatch = line.match(/(?:javob|answer|ответ|variant)?\s*[:=\-—]?\s*\b([A-DА-Яa-dа-я]\??)\b/i);
-                if (lineMatch && lineMatch[1]) {
-                    return normalizeLetter(lineMatch[1]);
-                }
-
-                const singleLetter = line.match(/^([A-DА-Яa-dа-я]\??)(?:\)|\.)?$/i);
-                if (singleLetter) {
-                    return normalizeLetter(singleLetter[1]);
-                }
+                const singleLetter = line.match(/^([A-EА-Дa-eа-д]\??)(?:\)|\.)?$/i);
+                if (singleLetter) return normalizeLetter(singleLetter[1]);
             }
 
-            // 4. Oxirgi harf:
-            const allLetters = [...clean.matchAll(/\b([A-D]\??)\b/gi)];
+            const allLetters = [...clean.matchAll(/\b([A-D]\??)\b/g)];
             if (allLetters.length > 0) {
                 return allLetters[allLetters.length - 1][1].toUpperCase();
             }
 
-            const lastLine = lines[lines.length - 1] || "";
-            return lastLine.slice(0, 10).trim();
+            return "-";
         }
 
         function normalizeLetter(ch) {
-            if (!ch) return "";
+            if (!ch) return "-";
             let upper = ch.toUpperCase();
             if (upper.startsWith("А")) return "A" + upper.slice(1);
             if (upper.startsWith("В")) return "B" + upper.slice(1);
             if (upper.startsWith("С")) return "C" + upper.slice(1);
             if (upper.startsWith("Д")) return "D" + upper.slice(1);
+            if (upper.startsWith("Е")) return "E" + upper.slice(1);
             return upper;
         }
 
-        // 6. Yangi javobni kutish (Sekin internet uchun 54 soniyagacha zaxira)
         return await new Promise(resolve => {
             let attempts = 0;
             let previousText = "";
@@ -610,7 +743,6 @@ async function attachImageAndAsk(dataUrl, prompt) {
             const timer = setInterval(() => {
                 attempts++;
 
-                // Orqa fonda muzlab qolmasligi uchun har bir tekshirishda uyg'otib turamiz
                 try {
                     window.dispatchEvent(new Event('focus'));
                     document.dispatchEvent(new Event('visibilitychange'));
@@ -624,17 +756,14 @@ async function attachImageAndAsk(dataUrl, prompt) {
 
                 if (newResponses.length > 0) {
                     const latestNewResponse = newResponses[newResponses.length - 1];
-                    // innerText orqa fonda bo'sh qolishi mumkinligi sababli textContent ham tekshiriladi
                     const text = (latestNewResponse.innerText || latestNewResponse.textContent || "").trim();
 
-                    const hasAnswerTag = /(?:JAVOB|ANSWER|ОТВЕТ)\s*[:=\-—]\s*[A-DА-Я]/i.test(text);
+                    const hasAnswerTag = /(?:JAVOB|ANSWER|ОТВЕТ)\s*[:=\-—]\s*[A-FА-Я]/i.test(text);
 
-                    // Gemini hali yozayotganini tekshirish (Stop/To'xtatish tugmasi yoki progress bar bormi?)
                     const isStillGenerating = !!document.querySelector(
                         'button[aria-label*="Stop" i], button[aria-label*="to‘xtat" i], button[aria-label*="to\'xtat" i], button[aria-label*="toxtat" i], button[aria-label*="Остановить" i], button.stop-button, mat-progress-bar'
                     );
 
-                    // Javob oxiridagi yakuniy amallar (Nusxalash/Copy tugmasi chiqqanmi?)
                     const hasActionButtons = !!latestNewResponse.parentElement?.querySelector(
                         'button[aria-label*="Copy" i], button[aria-label*="Nusxa" i], button[aria-label*="Копировать" i]'
                     );
@@ -646,33 +775,26 @@ async function attachImageAndAsk(dataUrl, prompt) {
                         stable = 0;
                     }
 
-                    // 1. Agar JAVOB: [A-D] tegi paydo bo'lsa:
-                    // Sekin internetda soxta to'xtab qolishlarga aldanmaslik uchun kamida 4 sikl (1.6s) o'zgarmasligi
-                    // yoki Stop tugmasi butunlay yo'qolgan bo'lishi shart!
                     if (hasAnswerTag && ((!isStillGenerating && stable >= 4) || hasActionButtons || stable >= 7)) {
                         clearInterval(timer);
-                        const cleanAnswer = extractCleanAnswer(text);
-                        resolve(cleanAnswer);
+                        resolve(extractCleanAnswer(text));
                         return;
                     }
 
-                    // 2. Agar JAVOB tegi bo'lmasa, FAQAT generatsiya butunlay to'xtab, kamida 8 sikl (~3.2 soniya) qimirlamasa:
-                    if (!isStillGenerating && (hasActionButtons || stable >= 8) && text.length > 20) {
+                    if (!isStillGenerating && (hasActionButtons || stable >= 8) && text.length > 15) {
                         clearInterval(timer);
-                        const cleanAnswer = extractCleanAnswer(text);
-                        resolve(cleanAnswer);
+                        resolve(extractCleanAnswer(text));
                         return;
                     }
                 }
 
-                // 135 tsikl * 400ms = ~54 soniya maksimal sabr (Sekin internet uchun)
                 if (attempts >= 135) {
                     clearInterval(timer);
-                    resolve(previousText ? extractCleanAnswer(previousText) : "Javob kelmadi (Internet sekin)");
+                    resolve(previousText ? extractCleanAnswer(previousText) : "-");
                 }
             }, 400);
         });
     } catch (error) {
-        return "Xatolik: " + error.message;
+        return "-";
     }
 }

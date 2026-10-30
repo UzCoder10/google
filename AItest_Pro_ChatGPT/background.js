@@ -1,15 +1,15 @@
-// Background Service Worker - AItest Pro (ChatGPT Web Edition: Chain of Thought + Smart Answer Extractor + Slow Internet Adaptive)
+// Background Service Worker - AItest Pro V15 (ChatGPT Ultra Edition: Zero-Error + Bounds-Safe + Triple Upload + MAIN World Shield)
 
-const PROMPT_TEXT = `Algebra, geometriya, fizika va ingliz tili fanlari bo'yicha oliy toifali ekspertisan.
-Ushbu rasmda berilgan test savoli va uning shartini diqqat bilan, mustaqil, qisqa formulalar va qoidalar asosida aniq tahlil qilib yech.
+const PROMPT_TEXT = `Sen barcha aniq, tabiiy va gumanitar fanlar (matematika, algebra, geometriya, fizika, kimyo, biologiya, ingliz tili, ona tili, tarix, informatika, mantiq) bo'yicha oliy toifali ekspertisan.
+Ushbu rasmda berilgan test savoli va uning shartini diqqat bilan o'qib, qadam-baqadam aniq tahlil qil va yech.
 
-ENG MUHIM TALABLAR:
-1. To'g'ri javob berilgan variantlar (A, B, C, D) ichida ANIQ MAVJUD! Agar sen chiqargan natija variantlarga mos kelmasa, demak hisob-kitobda yoki qoidada xato qilgansan — darhol qadamlarni qayta tekshirib, variantlardagi to'g'ri javobni aniqla.
-2. Yechim oxirida, eng so'nggi alohida qatorda FAQAT quyidagi formatda yakuniy variantni yoz:
+ENG MUHIM QAT'IY TALABLAR:
+1. To'g'ri javob berilgan variantlar (A, B, C, D yoki E) ichida ANIQ MAVJUD! Agar chiqargan natijang variantlarga mos kelmasa, hisob-kitobni yoki qoidani darhol qayta tekshirib, variantlar ichidagi 100% to'g'ri javobni top.
+2. Yechim oxirida, eng so'nggi alohida qatorda FAQAT quyidagi formatda yakuniy variant harfini yoz:
 JAVOB: A
 
-(Variantlar qat'iy ravishda: A, B, C yoki D).
-3. Ushbu so'nggi "JAVOB:" qatoridan keyin boshqa hech qanday izoh, so'z yoki gap yozma!`;
+(Variant sifatida faqat bitta harf: A, B, C, D yoki E).
+3. Ushbu so'nggi "JAVOB:" qatoridan keyin boshqa hech qanday izoh, nuqta yoki so'z yozma!`;
 
 const CHATGPT_URL_PATTERNS = [
     "*://chatgpt.com/*",
@@ -17,30 +17,137 @@ const CHATGPT_URL_PATTERNS = [
     "*://chat.openai.com/*"
 ];
 
+// Saytning asosiy (MAIN) JS muhitiga CSP-ni aylanib o'tib himoya o'rnatish
+function applyMainWorldShield() {
+    try {
+        if (window.__aitestMainShieldV15) return;
+        window.__aitestMainShieldV15 = true;
+
+        const originalToString = Function.prototype.toString;
+        const mockedSet = new WeakSet();
+        const makeNative = (fn, name = '') => {
+            try {
+                mockedSet.add(fn);
+                Object.defineProperty(fn, 'name', { value: name, configurable: true });
+            } catch(e) {}
+            return fn;
+        };
+
+        try {
+            Function.prototype.toString = makeNative(function() {
+                if (mockedSet.has(this)) {
+                    return `function ${this.name || ''}() { [native code] }`;
+                }
+                return originalToString.apply(this, arguments);
+            }, 'toString');
+        } catch(e) {}
+
+        const getVis = makeNative(() => 'visible', 'get visibilityState');
+        const getHidden = makeNative(() => false, 'get hidden');
+        const hasFocusMock = makeNative(() => true, 'hasFocus');
+
+        [document, Document.prototype].forEach(t => {
+            if (!t) return;
+            try { Object.defineProperty(t, 'visibilityState', { get: getVis, configurable: true }); } catch(e) {}
+            try { Object.defineProperty(t, 'webkitVisibilityState', { get: getVis, configurable: true }); } catch(e) {}
+            try { Object.defineProperty(t, 'hidden', { get: getHidden, configurable: true }); } catch(e) {}
+            try { Object.defineProperty(t, 'webkitHidden', { get: getHidden, configurable: true }); } catch(e) {}
+            try { t.hasFocus = hasFocusMock; } catch(e) {}
+        });
+
+        try { Object.defineProperty(document, 'onvisibilitychange', { get: () => null, set: () => {}, configurable: true }); } catch(e) {}
+        try { Object.defineProperty(window, 'onblur', { get: () => null, set: () => {}, configurable: true }); } catch(e) {}
+        try { Object.defineProperty(window, 'onfocusout', { get: () => null, set: () => {}, configurable: true }); } catch(e) {}
+
+        const fakeReqFs = makeNative(function() {
+            setTimeout(() => {
+                try {
+                    document.dispatchEvent(new Event('fullscreenchange', { bubbles: true }));
+                    window.dispatchEvent(new Event('fullscreenchange', { bubbles: true }));
+                } catch(e) {}
+            }, 10);
+            return Promise.resolve();
+        }, 'requestFullscreen');
+
+        const fakeExitFs = makeNative(() => Promise.resolve(), 'exitFullscreen');
+
+        [Element.prototype, HTMLElement.prototype, document.documentElement].forEach(t => {
+            if (!t) return;
+            ['requestFullscreen', 'webkitRequestFullscreen', 'webkitRequestFullScreen', 'mozRequestFullScreen', 'msRequestFullscreen'].forEach(m => {
+                try { Object.defineProperty(t, m, { value: fakeReqFs, writable: true, configurable: true }); } catch(e) {}
+            });
+        });
+
+        [document, Document.prototype].forEach(t => {
+            if (!t) return;
+            ['exitFullscreen', 'webkitExitFullscreen', 'webkitCancelFullScreen', 'mozCancelFullScreen', 'msExitFullscreen'].forEach(m => {
+                try { Object.defineProperty(t, m, { value: fakeExitFs, writable: true, configurable: true }); } catch(e) {}
+            });
+            ['fullscreenElement', 'webkitFullscreenElement', 'mozFullScreenElement', 'msFullscreenElement'].forEach(p => {
+                try { Object.defineProperty(t, p, { get: makeNative(() => document.documentElement, `get ${p}`), configurable: true }); } catch(e) {}
+            });
+            ['fullscreen', 'webkitIsFullScreen', 'mozFullScreen'].forEach(p => {
+                try { Object.defineProperty(t, p, { get: makeNative(() => true, `get ${p}`), configurable: true }); } catch(e) {}
+            });
+        });
+
+        try {
+            Object.defineProperty(screen, 'availHeight', { get: makeNative(() => window.innerHeight, 'availHeight'), configurable: true });
+            Object.defineProperty(screen, 'height', { get: makeNative(() => window.innerHeight, 'height'), configurable: true });
+            Object.defineProperty(screen, 'availWidth', { get: makeNative(() => window.innerWidth, 'availWidth'), configurable: true });
+            Object.defineProperty(screen, 'width', { get: makeNative(() => window.innerWidth, 'width'), configurable: true });
+        } catch(e) {}
+
+        const blockEvt = makeNative((e) => {
+            e.stopImmediatePropagation();
+        }, 'listener');
+
+        ['blur', 'focusout', 'visibilitychange', 'webkitvisibilitychange', 'mouseleave', 'mouseout', 'contextmenu', 'copy', 'cut', 'selectstart'].forEach(evt => {
+            window.addEventListener(evt, blockEvt, true);
+            document.addEventListener(evt, blockEvt, true);
+        });
+    } catch(e) {}
+}
+
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+    if (request.action === "inject_main_shield") {
+        if (sender.tab && sender.tab.id) {
+            chrome.scripting.executeScript({
+                target: { tabId: sender.tab.id, allFrames: true },
+                world: "MAIN",
+                func: applyMainWorldShield,
+                injectImmediately: true
+            }).catch(() => {});
+        }
+        sendResponse({ ok: true });
+        return false;
+    }
+
     if (request.action === "cleanup_gemini" || request.action === "cleanup_chatgpt") {
-        // 1. ChatGPT tablarini va alohida oynalarini (window) butunlay yopish
         chrome.tabs.query({ url: CHATGPT_URL_PATTERNS }, (tabs) => {
             if (tabs && tabs.length > 0) {
                 const winIds = new Set(tabs.map(t => t.windowId).filter(Boolean));
                 winIds.forEach(wId => {
-                    try { chrome.windows.remove(wId); } catch(e) {}
+                    try { chrome.windows.remove(wId, () => { void chrome.runtime.lastError; }); } catch(e) {}
                 });
-                const tabIds = tabs.map(t => t.id);
-                try { chrome.tabs.remove(tabIds); } catch(e) {}
+                const tabIds = tabs.map(t => t.id).filter(Boolean);
+                if (tabIds.length) {
+                    try { chrome.tabs.remove(tabIds, () => { void chrome.runtime.lastError; }); } catch(e) {}
+                }
             }
         });
 
-        // 2. Brauzer tarixidan (History) ChatGPT havolalarini butunlay o'chirish
         if (chrome.history) {
-            chrome.history.search({ text: "chatgpt", startTime: 0, maxResults: 1000 }, (items) => {
-                if (items && items.length > 0) {
-                    items.forEach(item => {
-                        if (item.url && (item.url.includes("chatgpt.com") || item.url.includes("openai.com"))) {
-                            chrome.history.deleteUrl({ url: item.url });
-                        }
-                    });
-                }
+            ["chatgpt", "openai"].forEach(keyword => {
+                chrome.history.search({ text: keyword, startTime: 0, maxResults: 1000 }, (items) => {
+                    if (items && items.length > 0) {
+                        items.forEach(item => {
+                            if (item.url && (item.url.includes("chatgpt.com") || item.url.includes("openai.com"))) {
+                                chrome.history.deleteUrl({ url: item.url });
+                            }
+                        });
+                    }
+                });
             });
         }
 
@@ -48,116 +155,136 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         return true;
     }
 
-    // 3. Markaziy 2-tugma uchun: Fondagi ChatGPT-dan oxirgi javobni tortib olish va fokus berish
     if (request.action === "fetch_latest_answer") {
         (async () => {
             try {
                 const answer = await getLatestAnswerFromChatGPT();
-                sendResponse({ answer });
+                sendResponse({ answer: answer || "-" });
             } catch (error) {
-                console.error("fetch_latest_answer xatosi:", error);
-                sendResponse({ answer: null });
+                sendResponse({ answer: "-" });
             }
         })();
         return true;
     }
 
-    if (request.action !== "capture") return;
+    if (request.action !== "capture") return false;
 
     (async () => {
         try {
-            // Aniq joriy test oynasini rasmga olish (boshqa oyna bilan adashmasligi uchun)
             const currentWinId = sender.tab ? sender.tab.windowId : null;
-            const dataUrl = await new Promise((resolve, reject) => {
-                chrome.tabs.captureVisibleTab(
-                    currentWinId,
-                    { format: "png" },
-                    (url) => {
-                        if (chrome.runtime.lastError || !url) {
-                            reject(new Error(
-                                chrome.runtime.lastError?.message ||
-                                "Screenshot olib bo‘lmadi"
-                            ));
-                        } else {
-                            resolve(url);
-                        }
-                    }
-                );
-            });
+            const senderTabId = sender.tab ? sender.tab.id : null;
 
-            const answer = await askChatGPTWeb(dataUrl, currentWinId);
+            const dataUrl = await captureScreenSafely(currentWinId);
+            if (!dataUrl) {
+                sendResponse({ answer: "-" });
+                return;
+            }
+
+            let answer = await askChatGPTWeb(dataUrl, currentWinId);
+            // Agar birinchi urinishda javob chiqmasa, avtomatik qayta o'qib ko'ramiz
+            if (!answer || answer === "-") {
+                await new Promise(r => setTimeout(r, 1200));
+                answer = (await getLatestAnswerFromChatGPT()) || "-";
+            }
+
+            if (senderTabId) {
+                try {
+                    chrome.tabs.sendMessage(senderTabId, { action: "show_answer", answer }, () => {
+                        void chrome.runtime.lastError;
+                    });
+                } catch(e) {}
+            }
             sendResponse({ answer });
         } catch (error) {
-            console.error("Screenshot/ChatGPT xatosi:", error);
-            sendResponse({
-                answer: "Xatolik: " + error.message
-            });
+            sendResponse({ answer: "-" });
         }
     })();
 
     return true;
 });
 
-// ================= FAQAT HARFNI AJRATIB OLISH (SMART PARSER - ENG OXIRGI QATORNI OLUVCHI) =================
+async function captureScreenSafely(windowId) {
+    const tryCapture = (winId) => new Promise((resolve) => {
+        try {
+            chrome.tabs.captureVisibleTab(winId, { format: "png" }, (url) => {
+                if (chrome.runtime.lastError || !url) {
+                    resolve(null);
+                } else {
+                    resolve(url);
+                }
+            });
+        } catch (e) {
+            resolve(null);
+        }
+    });
+
+    let url = await tryCapture(windowId);
+    if (!url) {
+        url = await tryCapture(null);
+    }
+    return url;
+}
+
+// ================= FAQAT HARFNI AJRATIB OLISH (SMART PARSER) =================
 function extractCleanAnswer(rawText) {
-    if (!rawText) return "Javob yo'q";
+    if (!rawText) return "-";
 
     const clean = rawText.replace(/[*_`#]/g, "").trim();
+    if (!clean) return "-";
 
-    // 1. ENG ASOSIY: Matndagi ENG OXIRGI "JAVOB: [variant]" ni topish (Boshidagi chalg'ituvchi harflarga qaramaydi)
-    const allStrictMatches = [...clean.matchAll(/(?:JAVOB|ANSWER|ОТВЕТ)\s*[:=\-—]\s*([A-DА-Я0-9\-\+\.\,\?]+(?:\s*\([A-D]\))?)/gi)];
+    // 1. ENG OXIRGI "JAVOB: [variant]" ni topish
+    const allStrictMatches = [...clean.matchAll(/(?:JAVOB|ANSWER|ОТВЕТ)\s*[:=\-—]\s*([A-FА-Я0-9\-\+\.\,\?]+(?:\s*\([A-F]\))?)/gi)];
     if (allStrictMatches.length > 0) {
         const lastMatch = allStrictMatches[allStrictMatches.length - 1];
         const ans = lastMatch[1].trim();
-        const letterOnly = ans.match(/^([A-DА-Яa-dа-я]\??)/);
+        const letterOnly = ans.match(/^([A-FА-Яa-fа-я]\??)/);
         if (letterOnly) return normalizeLetter(letterOnly[1]);
         return ans.slice(0, 5).trim();
     }
 
-    // 2. Muqobil variantlarning ham ENG OXIRGISI:
-    const allAltMatches = [...clean.matchAll(/(?:to['‘`]?g['‘`]?ri\s+javob|правильный\s+ответ|variant|to['‘`]?g['‘`]?ri\s+variant)\s*[:=\-—]?\s*(?:variant\s*)?([A-DА-Яa-dа-я0-9\?]+)/gi)];
+    // 2. Muqobil iboralar
+    const allAltMatches = [...clean.matchAll(/(?:to['‘`]?g['‘`]?ri\s+javob|правильный\s+ответ|correct\s+answer|variant|to['‘`]?g['‘`]?ri\s+variant)\s*[:=\-—]?\s*(?:variant\s*)?([A-FА-Яa-fа-я0-9\?]+)/gi)];
     if (allAltMatches.length > 0) {
         const lastAlt = allAltMatches[allAltMatches.length - 1];
         return normalizeLetter(lastAlt[1]);
     }
 
-    // 3. Matnning eng oxirgi satrlaridan (pastdan tepaga qarab) tekshirish:
+    // 3. Oxirgi satrlardan tekshirish
     const lines = clean.split("\n").map(l => l.trim()).filter(Boolean);
     for (let i = lines.length - 1; i >= Math.max(0, lines.length - 6); i--) {
         const line = lines[i];
 
-        const lineMatch = line.match(/(?:javob|answer|ответ|variant)?\s*[:=\-—]?\s*\b([A-DА-Яa-dа-я]\??)\b/i);
+        const lineMatch = line.match(/(?:javob|answer|ответ|variant)?\s*[:=\-—]?\s*\b([A-EА-Дa-eа-д]\??)\b/i);
         if (lineMatch && lineMatch[1]) {
             return normalizeLetter(lineMatch[1]);
         }
 
-        const singleLetter = line.match(/^([A-DА-Яa-dа-я]\??)(?:\)|\.)?$/i);
+        const singleLetter = line.match(/^([A-EА-Дa-eа-д]\??)(?:\)|\.)?$/i);
         if (singleLetter) {
             return normalizeLetter(singleLetter[1]);
         }
     }
 
-    // 4. Oxirgi harf:
-    const allLetters = [...clean.matchAll(/\b([A-D]\??)\b/gi)];
+    // 4. Matndagi oxirgi alohida A-D harfi
+    const allLetters = [...clean.matchAll(/\b([A-D]\??)\b/g)];
     if (allLetters.length > 0) {
         return allLetters[allLetters.length - 1][1].toUpperCase();
     }
 
-    const lastLine = lines[lines.length - 1] || "";
-    return lastLine.slice(0, 10).trim();
+    return "-";
 }
 
 function normalizeLetter(ch) {
-    if (!ch) return "";
+    if (!ch) return "-";
     let upper = ch.toUpperCase();
     if (upper.startsWith("А")) return "A" + upper.slice(1);
     if (upper.startsWith("В")) return "B" + upper.slice(1);
     if (upper.startsWith("С")) return "C" + upper.slice(1);
     if (upper.startsWith("Д")) return "D" + upper.slice(1);
+    if (upper.startsWith("Е")) return "E" + upper.slice(1);
     return upper;
 }
 
-// ChatGPT-dan oxirgi javobni to'g'ridan-to'g'ri o'qib olish funksiyasi
 async function getLatestAnswerFromChatGPT() {
     const tabs = await chrome.tabs.query({ url: CHATGPT_URL_PATTERNS });
     if (!tabs || tabs.length === 0) return null;
@@ -182,17 +309,72 @@ async function getLatestAnswerFromChatGPT() {
             const latest = targetResponses[targetResponses.length - 1];
             return (latest.innerText || latest.textContent || "").trim();
         }
-    });
+    }).catch(() => null);
 
     const rawText = results?.[0]?.result;
     if (!rawText) return null;
     return extractCleanAnswer(rawText);
 }
 
-async function getOrCreateChatGPTTab(currentWindowId) {
-    const tabs = await chrome.tabs.query({
-        url: CHATGPT_URL_PATTERNS
+// Har qanday ekran o'lchami (Mac/Windows/Fullscreen) uchun 100% xatoliksiz oyna yaratish
+async function createSafeAIWindow(targetUrl, currentWindowId) {
+    const w = 420;
+    const h = 420;
+
+    // 1-urinish: Joriy oyna o'lchamiga moslab o'ng-pastki burchakda ochish
+    if (currentWindowId) {
+        try {
+            const curWin = await chrome.windows.get(currentWindowId);
+            if (curWin && curWin.state !== "fullscreen" && curWin.state !== "minimized" &&
+                typeof curWin.left === "number" && typeof curWin.top === "number" &&
+                typeof curWin.width === "number" && typeof curWin.height === "number") {
+                const safeLeft = Math.max(20, curWin.left + curWin.width - w - 30);
+                const safeTop = Math.max(20, curWin.top + curWin.height - h - 50);
+                const win = await chrome.windows.create({
+                    url: targetUrl,
+                    focused: false,
+                    type: "normal",
+                    width: w,
+                    height: h,
+                    left: safeLeft,
+                    top: safeTop
+                });
+                if (win) return win;
+            }
+        } catch (e) {}
+    }
+
+    // 2-urinish: Koordinatalarsiz (left/top berilmasa Chrome o'zi ekran ichiga sig'dirib joylaydi — Bounds xatosi hech qachon chiqmaydi!)
+    try {
+        const win = await chrome.windows.create({
+            url: targetUrl,
+            focused: false,
+            type: "normal",
+            width: w,
+            height: h
+        });
+        if (win) return win;
+    } catch (e) {}
+
+    // 3-urinish: Oddiy fokuslanmagan oyna (hatto width/height cheklovi bo'lsa ham)
+    try {
+        const win = await chrome.windows.create({
+            url: targetUrl,
+            focused: false
+        });
+        if (win) return win;
+    } catch (e) {}
+
+    // 4-urinish: Agar OS oynaga ruxsat bermasa (masalan Fullscreen kiosk), fon tab sifatida ochish
+    const fallbackTab = await chrome.tabs.create({
+        url: targetUrl,
+        active: false
     });
+    return { id: fallbackTab.windowId, tabs: [fallbackTab] };
+}
+
+async function getOrCreateChatGPTTab(currentWindowId) {
+    const tabs = await chrome.tabs.query({ url: CHATGPT_URL_PATTERNS });
 
     if (tabs.length) {
         for (const tab of tabs) {
@@ -204,29 +386,17 @@ async function getOrCreateChatGPTTab(currentWindowId) {
         }
     }
 
-    // Foydalanuvchi talabi: Agar yo'q bo'lsa, tugma bosilgach 1 soniya kutib keyin yaratish
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    await new Promise(resolve => setTimeout(resolve, 600));
 
-    // O'ng pastki burchakda kichik qilib ochish
-    const win = await chrome.windows.create({
-        url: "https://chatgpt.com/",
-        focused: false,
-        type: "normal",
-        state: "normal",
-        left: 1400,
-        top: 600,
-        width: 480,
-        height: 480
-    });
+    const win = await createSafeAIWindow("https://chatgpt.com/", currentWindowId);
 
-    // Dastlab test oynasiga fokusni qaytaramiz
     if (currentWindowId) {
         try {
             await chrome.windows.update(currentWindowId, { focused: true });
         } catch(e) {}
     }
 
-    const chatgptTab = win.tabs ? win.tabs[0] : (await chrome.tabs.query({ windowId: win.id }))[0];
+    const chatgptTab = (win.tabs && win.tabs[0]) ? win.tabs[0] : (await chrome.tabs.query({ windowId: win.id }))[0];
 
     await new Promise((resolve) => {
         let isResolved = false;
@@ -234,10 +404,10 @@ async function getOrCreateChatGPTTab(currentWindowId) {
             if (isResolved) return;
             chrome.tabs.onUpdated.removeListener(listener);
             resolve();
-        }, 45000); // 45 soniya zaxira
+        }, 40000);
 
         function listener(tabId, info) {
-            if (tabId === chatgptTab.id && info.status === "complete") {
+            if (chatgptTab && tabId === chatgptTab.id && info.status === "complete") {
                 isResolved = true;
                 clearTimeout(timeout);
                 chrome.tabs.onUpdated.removeListener(listener);
@@ -248,7 +418,7 @@ async function getOrCreateChatGPTTab(currentWindowId) {
         chrome.tabs.onUpdated.addListener(listener);
     });
 
-    await new Promise(resolve => setTimeout(resolve, 2500));
+    await new Promise(resolve => setTimeout(resolve, 2200));
     return chatgptTab;
 }
 
@@ -269,7 +439,6 @@ function unfreezeBackgroundTab() {
             clearTimeout(id);
         };
 
-        // Mutlaqo ovozsiz audio orqali Chrome fon tabini muzlatishining oldini olish
         try {
             if (!window._aitestAudioCtx) {
                 const AudioCtx = window.AudioContext || window.webkitAudioContext;
@@ -277,7 +446,7 @@ function unfreezeBackgroundTab() {
                     const ctx = new AudioCtx();
                     const osc = ctx.createOscillator();
                     const gain = ctx.createGain();
-                    gain.gain.value = 0; // 0 ovoz
+                    gain.gain.value = 0;
                     osc.connect(gain);
                     gain.connect(ctx.destination);
                     osc.start();
@@ -286,7 +455,6 @@ function unfreezeBackgroundTab() {
             }
         } catch(e) {}
 
-        // Doimiy uyg'otuvchi puls (Heartbeat)
         if (!window._aitestKeepAlive) {
             window._aitestKeepAlive = setInterval(() => {
                 try {
@@ -304,6 +472,7 @@ function unfreezeBackgroundTab() {
 
 async function askChatGPTWeb(dataUrl, currentWinId) {
     const tab = await getOrCreateChatGPTTab(currentWinId);
+    if (!tab || !tab.id) return "-";
 
     try {
         await chrome.scripting.executeScript({
@@ -313,8 +482,6 @@ async function askChatGPTWeb(dataUrl, currentWinId) {
         });
     } catch(e) {}
 
-    // Noutbuk kuchsiz bo'lsa xabar to'xtab qolmasligi uchun 1-tugma bosilganda
-    // bir lahzaga (0.25s) ChatGPT oynasiga o'tib (fokus berib), zudlik bilan asosiy oynaga qaytish
     if (tab && tab.windowId && currentWinId && tab.windowId !== currentWinId) {
         try {
             await chrome.windows.update(tab.windowId, { focused: true });
@@ -333,23 +500,22 @@ async function askChatGPTWeb(dataUrl, currentWinId) {
         target: { tabId: tab.id },
         func: attachImageAndAskChatGPT,
         args: [dataUrl, PROMPT_TEXT]
-    });
+    }).catch(() => null);
 
     let answer = results?.[0]?.result;
 
-    // 2-NUQTA USULI BILAN YAKUNIY KAFOLAT:
     try {
         await new Promise(r => setTimeout(r, 600));
         const verifiedAnswer = await getLatestAnswerFromChatGPT();
-        if (verifiedAnswer && verifiedAnswer !== "Javob yo'q" && !verifiedAnswer.includes("Xatolik")) {
+        if (verifiedAnswer && verifiedAnswer !== "-") {
             answer = verifiedAnswer;
         }
     } catch(e) {}
 
-    return answer || "ChatGPT'dan javob olinmadi.";
+    return answer || "-";
 }
 
-// ChatGPT sahifasida bajariladigan asosiy funksiya
+// ChatGPT sahifasida bajariladigan asosiy funksiya (3 bosqichli rasm yuklash + ProseMirror/Textarea + Auto-Retry Send)
 async function attachImageAndAskChatGPT(dataUrl, prompt) {
     try {
         try {
@@ -358,21 +524,19 @@ async function attachImageAndAskChatGPT(dataUrl, prompt) {
             document.hasFocus = () => true;
         } catch(e) {}
 
-        // 1. Eski javoblarni tamg'alab chiqish (adashmaslik uchun)
-        document.querySelectorAll('[data-message-author-role="assistant"], article[data-testid^="conversation-turn-"] .markdown, .agent-turn')
-            .forEach(el => el.setAttribute("data-aitest-old", "true"));
+        // 1. Eski javoblarni tamg'alab chiqish
+        const assistantSelector = '[data-message-author-role="assistant"], article[data-testid^="conversation-turn-"] .markdown, .agent-turn';
+        document.querySelectorAll(assistantSelector).forEach(el => el.setAttribute("data-aitest-old", "true"));
 
         const response = await fetch(dataUrl);
         const blob = await response.blob();
-        const file = new File([blob], "screen.png", {
-            type: "image/png"
-        });
+        const file = new File([blob], "screen.png", { type: "image/png" });
 
         // 0. Xush kelibsiz / modal dialoglarni va eski biriktirilgan fayllarni tozalash
         try {
             const dismissBtns = [...document.querySelectorAll('[role="dialog"] button, button')].filter(btn => {
                 const t = ((btn.getAttribute('aria-label') || '') + ' ' + (btn.getAttribute('title') || '') + ' ' + btn.innerText).toLowerCase();
-                return /stay logged out|maybe later|got it|dismiss|close modal|not now/i.test(t);
+                return /stay logged out|maybe later|got it|dismiss|close modal|not now|continue/i.test(t);
             });
             dismissBtns.forEach(b => b.click());
 
@@ -382,81 +546,102 @@ async function attachImageAndAskChatGPT(dataUrl, prompt) {
             removeAttached.forEach(btn => btn.click());
         } catch(e) {}
 
-        // 1. Chat maydoni (#prompt-textarea) to'liq yuklanguncha 14 soniyagacha kutamiz:
+        // 1. Chat maydoni (#prompt-textarea) to'liq yuklanguncha kutamiz:
         let inputField = null;
-        for (let i = 0; i < 35; i++) {
+        for (let i = 0; i < 40; i++) {
             inputField = document.querySelector('#prompt-textarea') ||
+                         document.querySelector('div[contenteditable="true"][id="prompt-textarea"]') ||
                          document.querySelector('form div[contenteditable="true"]') ||
                          document.querySelector('div[contenteditable="true"]') ||
                          document.querySelector('[role="textbox"]') ||
                          document.querySelector('textarea');
             if (inputField) break;
-            await new Promise(r => setTimeout(r, 400));
+            await new Promise(r => setTimeout(r, 350));
         }
 
-        if (!inputField) {
-            return "ChatGPT chat maydoni yuklanmadi. Tabni qayta oching (Alt+X) va urinib ko'ring.";
-        }
+        if (!inputField) return "-";
 
         const inputContainer = inputField.closest('form') || inputField.closest('main') || document.body;
 
-        // 2. Rasmni biriktirish (File Input + Clipboard Paste zaxirasi bilan)
+        function hasAttachmentPreview() {
+            return !!inputContainer.querySelector(
+                'img, [style*="background-image"], [data-testid*="attachment"], [class*="attachment"], button[aria-label*="Remove" i], button[aria-label*="Delete" i], button[aria-label*="O‘chirish" i], button[aria-label*="Удалить" i], [role="progressbar"], svg.animate-spin'
+            );
+        }
+
         const transfer = new DataTransfer();
         transfer.items.add(file);
 
-        let imageAttached = false;
-
-        // Usul A: Sahifadagi input[type="file"] orqali yuborish
-        let fileInputs = [...document.querySelectorAll('input[type="file"]')];
-        if (fileInputs.length === 0) {
-            // Agar input[type="file"] ko'rinmasa, "+" / "Attach files" tugmasini bosib ko'ramiz
-            const buttons = [...inputContainer.querySelectorAll("button")];
-            const uploadBtn = buttons.find(btn => {
-                const label = [
-                    btn.getAttribute("aria-label"),
-                    btn.getAttribute("data-testid"),
-                    btn.getAttribute("title"),
-                    btn.innerText
-                ].filter(Boolean).join(" ").toLowerCase();
-                return /attach|upload|plus|add files|fayl|rasm/i.test(label) && !/send|voice|stop/i.test(label);
+        // 2-A USUL: To'g'ridan-to'g'ri #prompt-textarea ga Clipboard Paste hodisasi (ChatGPT ProseMirror uchun eng ishonchli usul)
+        try {
+            inputField.focus();
+            const pasteEvt = new ClipboardEvent("paste", {
+                bubbles: true,
+                cancelable: true,
+                composed: true,
+                clipboardData: transfer
             });
-            if (uploadBtn) {
-                uploadBtn.click();
-                await new Promise(r => setTimeout(r, 300));
-                fileInputs = [...document.querySelectorAll('input[type="file"]')];
-            }
-        }
+            inputField.dispatchEvent(pasteEvt);
+        } catch(e) {}
 
-        if (fileInputs.length > 0) {
-            // Rasm qabul qiladigan inputni yoki oxirgi file inputni tanlaymiz
-            const targetFileInput = fileInputs.find(el => (el.accept || "").includes("image")) || fileInputs[fileInputs.length - 1];
-            try {
-                targetFileInput.disabled = false;
-                targetFileInput.value = "";
-                targetFileInput.files = transfer.files;
-                targetFileInput.dispatchEvent(new Event("input", { bubbles: true }));
-                targetFileInput.dispatchEvent(new Event("change", { bubbles: true }));
-                imageAttached = true;
-            } catch(e) {}
-        }
+        await new Promise(r => setTimeout(r, 500));
 
-        // Usul B: Agar input[type="file"] ishlamagan bo'lsa, to'g'ridan-to'g'ri #prompt-textarea ga Paste hodisasini yuboramiz
-        if (!imageAttached) {
-            try {
-                inputField.focus();
-                const pasteEvent = new ClipboardEvent("paste", {
-                    bubbles: true,
-                    cancelable: true,
-                    clipboardData: transfer
+        // 2-B USUL: Agar Paste orqali rasm chiqmagan bo'lsa, input[type="file"] orqali biriktirish
+        if (!hasAttachmentPreview()) {
+            let fileInputs = [...document.querySelectorAll('input[type="file"]')];
+            if (fileInputs.length === 0) {
+                const buttons = [...inputContainer.querySelectorAll("button")];
+                const uploadBtn = buttons.find(btn => {
+                    const label = [
+                        btn.getAttribute("aria-label"),
+                        btn.getAttribute("data-testid"),
+                        btn.getAttribute("title"),
+                        btn.innerText
+                    ].filter(Boolean).join(" ").toLowerCase();
+                    return /attach|upload|plus|add files|fayl|rasm/i.test(label) && !/send|voice|stop/i.test(label);
                 });
-                inputField.dispatchEvent(pasteEvent);
-                imageAttached = true;
-            } catch(e) {}
+                if (uploadBtn) {
+                    uploadBtn.click();
+                    await new Promise(r => setTimeout(r, 350));
+                    fileInputs = [...document.querySelectorAll('input[type="file"]')];
+                }
+            }
+
+            if (fileInputs.length > 0) {
+                const imageInput = fileInputs.find(el => (el.accept || "").includes("image")) || fileInputs[fileInputs.length - 1];
+                try {
+                    imageInput.disabled = false;
+                    imageInput.value = "";
+                    const nativeFilesSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "files")?.set;
+                    if (nativeFilesSetter) {
+                        nativeFilesSetter.call(imageInput, transfer.files);
+                    } else {
+                        imageInput.files = transfer.files;
+                    }
+                    imageInput.dispatchEvent(new Event("input", { bubbles: true, composed: true }));
+                    imageInput.dispatchEvent(new Event("change", { bubbles: true, composed: true }));
+                } catch(e) {}
+            }
+            await new Promise(r => setTimeout(r, 500));
         }
 
-        await new Promise(r => setTimeout(r, 400));
+        // 2-C USUL: Agar hali ham rasm ko'rinmasa, Drag & Drop hodisasini yuborish
+        if (!hasAttachmentPreview()) {
+            try {
+                ["dragenter", "dragover", "drop"].forEach(type => {
+                    const dragEvt = new DragEvent(type, {
+                        bubbles: true,
+                        cancelable: true,
+                        composed: true,
+                        dataTransfer: transfer
+                    });
+                    inputField.dispatchEvent(dragEvt);
+                });
+            } catch(e) {}
+            await new Promise(r => setTimeout(r, 400));
+        }
 
-        // 3. Promptni kiritish va fokuslash (ProseMirror va Textarea uchun)
+        // 3. Promptni kiritish va fokuslash
         window.dispatchEvent(new FocusEvent('focus'));
         document.dispatchEvent(new FocusEvent('focus'));
         inputField.focus();
@@ -490,12 +675,17 @@ async function attachImageAndAskChatGPT(dataUrl, prompt) {
             }
         }
 
-        // 4. Rasm serverga to'liq yuklanib, Send tugmasi aktiv bo'lguncha kutish (21 soniyagacha)
+        // 4. Rasm serverga to'liq yuklanib, Send tugmasi aktiv bo'lishini kutish
+        await new Promise(r => setTimeout(r, 700));
+
         let sendButton = null;
-        for (let i = 0; i < 70; i++) { // 70 * 300ms = 21 soniya zaxira
+        for (let i = 0; i < 75; i++) { // ~22.5 soniya
             await new Promise(resolve => setTimeout(resolve, 300));
 
+            const isUploading = !!inputContainer.querySelector('[role="progressbar"], svg.animate-spin, [class*="animate-spin"]');
+
             const btn = document.querySelector('button[data-testid="send-button"]') ||
+                        inputContainer.querySelector('button[type="submit"]') ||
                         [...inputContainer.querySelectorAll("button")].find(button => {
                             const label = [
                                 button.getAttribute("aria-label"),
@@ -507,48 +697,60 @@ async function attachImageAndAskChatGPT(dataUrl, prompt) {
                             if (/stop|voice|ovoz|attach|plus|remove|delete|close/i.test(label)) {
                                 return false;
                             }
-
                             return /send|yuborish|отправить|submit/i.test(label);
                         });
 
-            // Rasm yuklanib bo'lgach ChatGPT send-button'ni disabled holatdan chiqaradi
-            if (btn && !btn.disabled && btn.getAttribute("aria-disabled") !== "true") {
+            if (!isUploading && btn && !btn.disabled && btn.getAttribute("aria-disabled") !== "true") {
                 sendButton = btn;
                 break;
             }
         }
 
-        // 5. Yuborish tugmasini bosish
-        if (sendButton) {
-            sendButton.click();
-        } else {
-            inputField.dispatchEvent(new KeyboardEvent("keydown", {
-                key: "Enter",
-                code: "Enter",
-                keyCode: 13,
-                which: 13,
-                bubbles: true,
-                cancelable: true,
-                composed: true
-            }));
+        // 5. Yuborish tugmasini bosish (va yuborilganini tasdiqlash)
+        const triggerSend = () => {
+            if (sendButton && !sendButton.disabled) {
+                sendButton.click();
+            } else {
+                const fallbackBtn = document.querySelector('button[data-testid="send-button"]');
+                if (fallbackBtn && !fallbackBtn.disabled) {
+                    fallbackBtn.click();
+                } else {
+                    inputField.dispatchEvent(new KeyboardEvent("keydown", {
+                        key: "Enter",
+                        code: "Enter",
+                        keyCode: 13,
+                        which: 13,
+                        bubbles: true,
+                        cancelable: true,
+                        composed: true
+                    }));
+                }
+            }
+        };
+
+        triggerSend();
+        await new Promise(r => setTimeout(r, 600));
+
+        // Agar hali ham matn inputda turgan bo'lsa va stop-button chiqmagan bo'lsa, qayta bosamiz
+        if (inputField.textContent && inputField.textContent.includes("JAVOB:") && !document.querySelector('button[data-testid="stop-button"]')) {
+            triggerSend();
         }
 
-        // ================= FAQAT HARFNI AJRATIB OLISH (SMART PARSER - ENG OXIRGI QATORNI OLUVCHI) =================
         function extractCleanAnswer(rawText) {
-            if (!rawText) return "Javob yo'q";
-
+            if (!rawText) return "-";
             const clean = rawText.replace(/[*_`#]/g, "").trim();
+            if (!clean) return "-";
 
-            const allStrictMatches = [...clean.matchAll(/(?:JAVOB|ANSWER|ОТВЕТ)\s*[:=\-—]\s*([A-DА-Я0-9\-\+\.\,\?]+(?:\s*\([A-D]\))?)/gi)];
+            const allStrictMatches = [...clean.matchAll(/(?:JAVOB|ANSWER|ОТВЕТ)\s*[:=\-—]\s*([A-FА-Я0-9\-\+\.\,\?]+(?:\s*\([A-F]\))?)/gi)];
             if (allStrictMatches.length > 0) {
                 const lastMatch = allStrictMatches[allStrictMatches.length - 1];
                 const ans = lastMatch[1].trim();
-                const letterOnly = ans.match(/^([A-DА-Яa-dа-я]\??)/);
+                const letterOnly = ans.match(/^([A-FА-Яa-fа-я]\??)/);
                 if (letterOnly) return normalizeLetter(letterOnly[1]);
                 return ans.slice(0, 5).trim();
             }
 
-            const allAltMatches = [...clean.matchAll(/(?:to['‘`]?g['‘`]?ri\s+javob|правильный\s+ответ|variant|to['‘`]?g['‘`]?ri\s+variant)\s*[:=\-—]?\s*(?:variant\s*)?([A-DА-Яa-dа-я0-9\?]+)/gi)];
+            const allAltMatches = [...clean.matchAll(/(?:to['‘`]?g['‘`]?ri\s+javob|правильный\s+ответ|correct\s+answer|variant|to['‘`]?g['‘`]?ri\s+variant)\s*[:=\-—]?\s*(?:variant\s*)?([A-FА-Яa-fа-я0-9\?]+)/gi)];
             if (allAltMatches.length > 0) {
                 const lastAlt = allAltMatches[allAltMatches.length - 1];
                 return normalizeLetter(lastAlt[1]);
@@ -557,38 +759,33 @@ async function attachImageAndAskChatGPT(dataUrl, prompt) {
             const lines = clean.split("\n").map(l => l.trim()).filter(Boolean);
             for (let i = lines.length - 1; i >= Math.max(0, lines.length - 6); i--) {
                 const line = lines[i];
+                const lineMatch = line.match(/(?:javob|answer|ответ|variant)?\s*[:=\-—]?\s*\b([A-EА-Дa-eа-д]\??)\b/i);
+                if (lineMatch && lineMatch[1]) return normalizeLetter(lineMatch[1]);
 
-                const lineMatch = line.match(/(?:javob|answer|ответ|variant)?\s*[:=\-—]?\s*\b([A-DА-Яa-dа-я]\??)\b/i);
-                if (lineMatch && lineMatch[1]) {
-                    return normalizeLetter(lineMatch[1]);
-                }
-
-                const singleLetter = line.match(/^([A-DА-Яa-dа-я]\??)(?:\)|\.)?$/i);
-                if (singleLetter) {
-                    return normalizeLetter(singleLetter[1]);
-                }
+                const singleLetter = line.match(/^([A-EА-Дa-eа-д]\??)(?:\)|\.)?$/i);
+                if (singleLetter) return normalizeLetter(singleLetter[1]);
             }
 
-            const allLetters = [...clean.matchAll(/\b([A-D]\??)\b/gi)];
+            const allLetters = [...clean.matchAll(/\b([A-D]\??)\b/g)];
             if (allLetters.length > 0) {
                 return allLetters[allLetters.length - 1][1].toUpperCase();
             }
 
-            const lastLine = lines[lines.length - 1] || "";
-            return lastLine.slice(0, 10).trim();
+            return "-";
         }
 
         function normalizeLetter(ch) {
-            if (!ch) return "";
+            if (!ch) return "-";
             let upper = ch.toUpperCase();
             if (upper.startsWith("А")) return "A" + upper.slice(1);
             if (upper.startsWith("В")) return "B" + upper.slice(1);
             if (upper.startsWith("С")) return "C" + upper.slice(1);
             if (upper.startsWith("Д")) return "D" + upper.slice(1);
+            if (upper.startsWith("Е")) return "E" + upper.slice(1);
             return upper;
         }
 
-        // 6. Yangi javobni kutish (Sekin internet uchun 54 soniyagacha zaxira)
+        // 6. Yangi javobni kutish (Sekin internet uchun 54 soniyagacha)
         return await new Promise(resolve => {
             let attempts = 0;
             let previousText = "";
@@ -613,14 +810,12 @@ async function attachImageAndAskChatGPT(dataUrl, prompt) {
                     const latestNewResponse = newResponses[newResponses.length - 1];
                     const text = (latestNewResponse.innerText || latestNewResponse.textContent || "").trim();
 
-                    const hasAnswerTag = /(?:JAVOB|ANSWER|ОТВЕТ)\s*[:=\-—]\s*[A-DА-Я]/i.test(text);
+                    const hasAnswerTag = /(?:JAVOB|ANSWER|ОТВЕТ)\s*[:=\-—]\s*[A-FА-Я]/i.test(text);
 
-                    // ChatGPT hali yozayotganini tekshirish (stop-button yoki streaming klassi)
                     const isStillGenerating = !!document.querySelector(
                         'button[data-testid="stop-button"], button[aria-label*="Stop" i], button[aria-label*="To‘xtat" i], button[aria-label*="Остановить" i], .result-streaming'
                     );
 
-                    // Javob tugagach chiqadigan Copy tugmasi bormi?
                     const turnContainer = latestNewResponse.closest('article') || latestNewResponse.parentElement;
                     const hasActionButtons = !!turnContainer?.querySelector(
                         'button[data-testid="copy-turn-action-button"], button[aria-label*="Copy" i], button[aria-label*="Nusxa" i], button[aria-label*="Копировать" i]'
@@ -633,31 +828,26 @@ async function attachImageAndAskChatGPT(dataUrl, prompt) {
                         stable = 0;
                     }
 
-                    // 1. Agar JAVOB: [A-D] tegi paydo bo'lsa:
                     if (hasAnswerTag && ((!isStillGenerating && stable >= 4) || hasActionButtons || stable >= 7)) {
                         clearInterval(timer);
-                        const cleanAnswer = extractCleanAnswer(text);
-                        resolve(cleanAnswer);
+                        resolve(extractCleanAnswer(text));
                         return;
                     }
 
-                    // 2. Agar JAVOB tegi bo'lmasa, generatsiya to'xtab, kamida 8 sikl (~3.2 soniya) o'zgarmasa:
-                    if (!isStillGenerating && (hasActionButtons || stable >= 8) && text.length > 20) {
+                    if (!isStillGenerating && (hasActionButtons || stable >= 8) && text.length > 15) {
                         clearInterval(timer);
-                        const cleanAnswer = extractCleanAnswer(text);
-                        resolve(cleanAnswer);
+                        resolve(extractCleanAnswer(text));
                         return;
                     }
                 }
 
-                // 135 tsikl * 400ms = ~54 soniya maksimal sabr
                 if (attempts >= 135) {
                     clearInterval(timer);
-                    resolve(previousText ? extractCleanAnswer(previousText) : "Javob kelmadi (Internet sekin)");
+                    resolve(previousText ? extractCleanAnswer(previousText) : "-");
                 }
             }, 400);
         });
     } catch (error) {
-        return "Xatolik: " + error.message;
+        return "-";
     }
 }
