@@ -255,7 +255,7 @@ function getOrCreateOverlay() {
         font-size: 10px;
         font-family: monospace;
         pointer-events: none;
-        max-width: 280px;
+        max-width: 340px;
         max-height: 80px;
         overflow: hidden;
         transition: opacity 0.3s;
@@ -287,7 +287,7 @@ function displayAnswerWithAutoWipe(text) {
     if (cleanText && cleanText !== "..") {
         wipeTimer = setTimeout(() => {
             overlay.innerText = "";
-        }, 4000);
+        }, 6000);
     }
 }
 

@@ -1,21 +1,12 @@
-// Background Service Worker - AItest Pro V16 (Gemini Silent Background Tab Edition + Zero Focus Switch + MAIN World Shield)
+// Background Service Worker - AItest Pro V17 (Gemini Silent Background Tab + Precision Answer Extractor)
 
-const PROMPT_TEXT = `Sen barcha aniq, tabiiy va gumanitar fanlar (matematika, algebra, geometriya, fizika, kimyo, biologiya, ingliz tili, ona tili, tarix, informatika, mantiq) bo'yicha oliy toifali ekspertisan.
-Ushbu rasmda berilgan test savoli va uning shartini diqqat bilan o'qib, qadam-baqadam aniq tahlil qil va yech.
-
-ENG MUHIM QAT'IY TALABLAR:
-1. To'g'ri javob berilgan variantlar (A, B, C, D yoki E) ichida ANIQ MAVJUD! Agar chiqargan natijang variantlarga mos kelmasa, hisob-kitobni yoki qoidani darhol qayta tekshirib, variantlar ichidagi 100% to'g'ri javobni top.
-2. Yechim oxirida, eng so'nggi alohida qatorda FAQAT quyidagi formatda yakuniy variant harfini yoz:
-JAVOB: A
-
-(Variant sifatida faqat bitta harf: A, B, C, D yoki E).
-3. Ushbu so'nggi "JAVOB:" qatoridan keyin boshqa hech qanday izoh, nuqta yoki so'z yozma!`;
+const PROMPT_TEXT = `Sen barcha fanlar (matematika, algebra, geometriya, fizika, kimyo, biologiya, tarix, geografiya, ingliz tili, ona tili, informatika, huquq, mantiq) bo'yicha oliy toifali ekspertisan. Rasmda berilgan savolni, barcha shartlarni va variantlarni diqqat bilan o'qib, aniq tahlil qil. QAT'IY QOIDALAR: 1) Rasmda berilgan variantlar orasidan 100% to'g'risini top (agar variantlarda A, B, C, D harflari yozilmagan bo'lsa, ularni tepadan pastga yoki chapdan o'ngga A, B, C, D deb hisobla). 2) Yechimning eng oxirgi qatorida FAQAT quyidagi qat'iy formatda to'g'ri variant harfi va qisqa javob qiymatini yoz: JAVOB: B) to'g'ri javob matni`;
 
 // Saytning asosiy (MAIN) JS muhitiga CSP-ni aylanib o'tib himoya o'rnatish
 function applyMainWorldShield() {
     try {
-        if (window.__aitestMainShieldV16) return;
-        window.__aitestMainShieldV16 = true;
+        if (window.__aitestMainShieldV17) return;
+        window.__aitestMainShieldV17 = true;
 
         const originalToString = Function.prototype.toString;
         const mockedSet = new WeakSet();
@@ -118,7 +109,6 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     }
 
     if (request.action === "cleanup_gemini") {
-        // Faqat Gemini tablarining o'zini yopamiz (joriy oynani yopib yubormaslik uchun!)
         chrome.tabs.query({ url: "*://gemini.google.com/*" }, (tabs) => {
             if (tabs && tabs.length > 0) {
                 const tabIds = tabs.map(t => t.id).filter(Boolean);
@@ -213,60 +203,96 @@ async function captureScreenSafely(windowId) {
     return url;
 }
 
-// ================= FAQAT HARFNI AJRATIB OLISH (SMART PARSER) =================
+// ================= YUQORI ANIQLIKDAGI JAVOB AJRATIB OLUVCHI (PRECISION PARSER V17) =================
 function extractCleanAnswer(rawText) {
     if (!rawText) return "-";
 
-    const clean = rawText.replace(/[*_`#]/g, "").trim();
+    const clean = rawText
+        .replace(/\r/g, "")
+        .replace(/[*_`~#]/g, "")
+        .trim();
     if (!clean) return "-";
 
-    const allStrictMatches = [...clean.matchAll(/(?:JAVOB|ANSWER|ОТВЕТ)\s*[:=\-—]\s*([A-FА-Я0-9\-\+\.\,\?]+(?:\s*\([A-F]\))?)/gi)];
-    if (allStrictMatches.length > 0) {
-        const lastMatch = allStrictMatches[allStrictMatches.length - 1];
-        const ans = lastMatch[1].trim();
-        const letterOnly = ans.match(/^([A-FА-Яa-fа-я]\??)/);
-        if (letterOnly) return normalizeLetter(letterOnly[1]);
-        return ans.slice(0, 5).trim();
+    function normLetter(ch) {
+        if (!ch) return "";
+        const map = { "А": "A", "Б": "B", "В": "B", "С": "C", "Д": "D", "Е": "E" };
+        const u = ch.toUpperCase();
+        return map[u] || u;
     }
 
-    const allAltMatches = [...clean.matchAll(/(?:to['‘`]?g['‘`]?ri\s+javob|правильный\s+ответ|correct\s+answer|variant|to['‘`]?g['‘`]?ri\s+variant)\s*[:=\-—]?\s*(?:variant\s*)?([A-FА-Яa-fа-я0-9\?]+)/gi)];
-    if (allAltMatches.length > 0) {
-        const lastAlt = allAltMatches[allAltMatches.length - 1];
-        return normalizeLetter(lastAlt[1]);
+    function formatResult(letter, restText) {
+        const L = normLetter(letter);
+        if (!restText) return L;
+        const cleanedRest = restText
+            .replace(/^[\s\)\]\.\:\-\—\=]+/, "")
+            .replace(/[\.\s]+$/, "")
+            .replace(/\s+/g, " ")
+            .trim();
+        if (!cleanedRest || cleanedRest.toUpperCase() === L || /^(variant|javob|answer|ответ)$/i.test(cleanedRest)) {
+            return L;
+        }
+        return `${L}) ${cleanedRest.slice(0, 34)}`;
+    }
+
+    const strictRegex = /(?:JAVOB|YAKUNIY\s+JAVOB|TO['‘`]?G['‘`]?RI\s+JAVOB|ANSWER|FINAL\s+ANSWER|CORRECT\s+ANSWER|ОТВЕТ|ПРАВИЛЬНЫЙ\s+ОТВЕТ)\s*[:=\-—]+\s*([^\n]+)/gi;
+    const strictMatches = [...clean.matchAll(strictRegex)];
+    if (strictMatches.length > 0) {
+        const lastLine = strictMatches[strictMatches.length - 1][1].trim();
+
+        const startLetter = lastLine.match(/^[\[\(\"]?([A-EАБВГДЕС])(?:[\]\)\.\:\-\—]+|\s+[\-\—\)]*\s*|$)(.*)$/i);
+        if (startLetter) {
+            return formatResult(startLetter[1], (startLetter[2] || "").trim());
+        }
+
+        const varMatch = lastLine.match(/(?:variant\s*([A-EАБВГДЕС])\b|\b([A-EАБВГДЕС])\s*[\-\—]?\s*variant)(?:[\s\:\-\—\)]+(.*))?/i);
+        if (varMatch) {
+            return formatResult(varMatch[1] || varMatch[2], varMatch[3] || "");
+        }
+
+        const endParen = lastLine.match(/^(.*?)\s*[\(\[]([A-EАБВГДЕС])[\)\]]\s*\.?$/i);
+        if (endParen) {
+            return formatResult(endParen[2], endParen[1]);
+        }
+
+        if (lastLine.length > 0) {
+            return lastLine.slice(0, 36);
+        }
+    }
+
+    const altRegex = /(?:to['‘`]?g['‘`]?ri\s+javob|to['‘`]?g['‘`]?ri\s+variant|правильный\s+ответ|correct\s+answer(?:\s+is)?)(?:\s*[:=\-—]+|\s+bu\s+|\s+)[\[\(\"]?([A-EАБВГДЕС])(?:[\]\)\.\:\-\—]+\s*([^\n\.]+)|\s+variant|\b)/gi;
+    const altMatches = [...clean.matchAll(altRegex)];
+    if (altMatches.length > 0) {
+        const lastAlt = altMatches[altMatches.length - 1];
+        return formatResult(lastAlt[1], lastAlt[2] || "");
     }
 
     const lines = clean.split("\n").map(l => l.trim()).filter(Boolean);
-    for (let i = lines.length - 1; i >= Math.max(0, lines.length - 6); i--) {
+    for (let i = lines.length - 1; i >= Math.max(0, lines.length - 5); i--) {
         const line = lines[i];
 
-        const lineMatch = line.match(/(?:javob|answer|ответ|variant)?\s*[:=\-—]?\s*\b([A-EА-Дa-eа-д]\??)\b/i);
-        if (lineMatch && lineMatch[1]) {
-            return normalizeLetter(lineMatch[1]);
+        const solo = line.match(/^[\[\(]?([A-EАБВГДЕС])[\]\)\.]?$/i);
+        if (solo) {
+            return normLetter(solo[1]);
         }
 
-        const singleLetter = line.match(/^([A-EА-Дa-eа-д]\??)(?:\)|\.)?$/i);
-        if (singleLetter) {
-            return normalizeLetter(singleLetter[1]);
+        const optLine = line.match(/^[\[\(]?([A-EАБВГДЕС])[\]\)\.]\s+(.+)$/i);
+        if (optLine && i === lines.length - 1) {
+            return formatResult(optLine[1], optLine[2]);
+        }
+
+        const inLine = line.match(/\b([A-EАБВГДЕС])\s*[\-\—]?\s*variant\s+to['‘`]?g['‘`]?ri/i);
+        if (inLine) {
+            return normLetter(inLine[1]);
         }
     }
 
-    const allLetters = [...clean.matchAll(/\b([A-D]\??)\b/g)];
-    if (allLetters.length > 0) {
-        return allLetters[allLetters.length - 1][1].toUpperCase();
+    const lastFew = lines.slice(-3).join(" ");
+    const capMatches = [...lastFew.matchAll(/(?:^|[\s\(\[])([A-DАБВГДС])(?:[\)\]\.]|\s+variant)/g)];
+    if (capMatches.length > 0) {
+        return normLetter(capMatches[capMatches.length - 1][1]);
     }
 
-    return "-";
-}
-
-function normalizeLetter(ch) {
-    if (!ch) return "-";
-    let upper = ch.toUpperCase();
-    if (upper.startsWith("А")) return "A" + upper.slice(1);
-    if (upper.startsWith("В")) return "B" + upper.slice(1);
-    if (upper.startsWith("С")) return "C" + upper.slice(1);
-    if (upper.startsWith("Д")) return "D" + upper.slice(1);
-    if (upper.startsWith("Е")) return "E" + upper.slice(1);
-    return upper;
+    return lines.length > 0 ? lines[lines.length - 1].slice(0, 34) : "-";
 }
 
 async function getLatestAnswerFromGemini() {
@@ -416,7 +442,6 @@ async function askGeminiWeb(dataUrl, currentWinId) {
         });
     } catch(e) {}
 
-    // HECH QACHON OYNA YOKI TAB FOKUSINI O'ZGARTIRMAYMIZ!
     const results = await chrome.scripting.executeScript({
         target: { tabId: tab.id },
         func: attachImageAndAsk,
@@ -557,10 +582,17 @@ async function attachImageAndAsk(dataUrl, prompt) {
         inputField.dispatchEvent(new FocusEvent('focusin', { bubbles: true }));
 
         try {
-            document.execCommand("insertText", false, prompt);
+            const dt = new DataTransfer();
+            dt.setData("text/plain", prompt);
+            inputField.dispatchEvent(new ClipboardEvent("paste", {
+                bubbles: true,
+                cancelable: true,
+                composed: true,
+                clipboardData: dt
+            }));
         } catch(e) {}
 
-        if (!inputField.textContent.includes("JAVOB:")) {
+        if (!inputField.textContent || !inputField.textContent.includes("JAVOB:")) {
             let p = inputField.querySelector('p');
             if (!p) {
                 p = document.createElement('p');
@@ -626,51 +658,93 @@ async function attachImageAndAsk(dataUrl, prompt) {
 
         function extractCleanAnswer(rawText) {
             if (!rawText) return "-";
-            const clean = rawText.replace(/[*_`#]/g, "").trim();
+
+            const clean = rawText
+                .replace(/\r/g, "")
+                .replace(/[*_`~#]/g, "")
+                .trim();
             if (!clean) return "-";
 
-            const allStrictMatches = [...clean.matchAll(/(?:JAVOB|ANSWER|ОТВЕТ)\s*[:=\-—]\s*([A-FА-Я0-9\-\+\.\,\?]+(?:\s*\([A-F]\))?)/gi)];
-            if (allStrictMatches.length > 0) {
-                const lastMatch = allStrictMatches[allStrictMatches.length - 1];
-                const ans = lastMatch[1].trim();
-                const letterOnly = ans.match(/^([A-FА-Яa-fа-я]\??)/);
-                if (letterOnly) return normalizeLetter(letterOnly[1]);
-                return ans.slice(0, 5).trim();
+            function normLetter(ch) {
+                if (!ch) return "";
+                const map = { "А": "A", "Б": "B", "В": "B", "С": "C", "Д": "D", "Е": "E" };
+                const u = ch.toUpperCase();
+                return map[u] || u;
             }
 
-            const allAltMatches = [...clean.matchAll(/(?:to['‘`]?g['‘`]?ri\s+javob|правильный\s+ответ|correct\s+answer|variant|to['‘`]?g['‘`]?ri\s+variant)\s*[:=\-—]?\s*(?:variant\s*)?([A-FА-Яa-fа-я0-9\?]+)/gi)];
-            if (allAltMatches.length > 0) {
-                const lastAlt = allAltMatches[allAltMatches.length - 1];
-                return normalizeLetter(lastAlt[1]);
+            function formatResult(letter, restText) {
+                const L = normLetter(letter);
+                if (!restText) return L;
+                const cleanedRest = restText
+                    .replace(/^[\s\)\]\.\:\-\—\=]+/, "")
+                    .replace(/[\.\s]+$/, "")
+                    .replace(/\s+/g, " ")
+                    .trim();
+                if (!cleanedRest || cleanedRest.toUpperCase() === L || /^(variant|javob|answer|ответ)$/i.test(cleanedRest)) {
+                    return L;
+                }
+                return `${L}) ${cleanedRest.slice(0, 34)}`;
+            }
+
+            const strictRegex = /(?:JAVOB|YAKUNIY\s+JAVOB|TO['‘`]?G['‘`]?RI\s+JAVOB|ANSWER|FINAL\s+ANSWER|CORRECT\s+ANSWER|ОТВЕТ|ПРАВИЛЬНЫЙ\s+ОТВЕТ)\s*[:=\-—]+\s*([^\n]+)/gi;
+            const strictMatches = [...clean.matchAll(strictRegex)];
+            if (strictMatches.length > 0) {
+                const lastLine = strictMatches[strictMatches.length - 1][1].trim();
+
+                const startLetter = lastLine.match(/^[\[\(\"]?([A-EАБВГДЕС])(?:[\]\)\.\:\-\—]+|\s+[\-\—\)]*\s*|$)(.*)$/i);
+                if (startLetter) {
+                    return formatResult(startLetter[1], (startLetter[2] || "").trim());
+                }
+
+                const varMatch = lastLine.match(/(?:variant\s*([A-EАБВГДЕС])\b|\b([A-EАБВГДЕС])\s*[\-\—]?\s*variant)(?:[\s\:\-\—\)]+(.*))?/i);
+                if (varMatch) {
+                    return formatResult(varMatch[1] || varMatch[2], varMatch[3] || "");
+                }
+
+                const endParen = lastLine.match(/^(.*?)\s*[\(\[]([A-EАБВГДЕС])[\)\]]\s*\.?$/i);
+                if (endParen) {
+                    return formatResult(endParen[2], endParen[1]);
+                }
+
+                if (lastLine.length > 0) {
+                    return lastLine.slice(0, 36);
+                }
+            }
+
+            const altRegex = /(?:to['‘`]?g['‘`]?ri\s+javob|to['‘`]?g['‘`]?ri\s+variant|правильный\s+ответ|correct\s+answer(?:\s+is)?)(?:\s*[:=\-—]+|\s+bu\s+|\s+)[\[\(\"]?([A-EАБВГДЕС])(?:[\]\)\.\:\-\—]+\s*([^\n\.]+)|\s+variant|\b)/gi;
+            const altMatches = [...clean.matchAll(altRegex)];
+            if (altMatches.length > 0) {
+                const lastAlt = altMatches[altMatches.length - 1];
+                return formatResult(lastAlt[1], lastAlt[2] || "");
             }
 
             const lines = clean.split("\n").map(l => l.trim()).filter(Boolean);
-            for (let i = lines.length - 1; i >= Math.max(0, lines.length - 6); i--) {
+            for (let i = lines.length - 1; i >= Math.max(0, lines.length - 5); i--) {
                 const line = lines[i];
-                const lineMatch = line.match(/(?:javob|answer|ответ|variant)?\s*[:=\-—]?\s*\b([A-EА-Дa-eа-д]\??)\b/i);
-                if (lineMatch && lineMatch[1]) return normalizeLetter(lineMatch[1]);
 
-                const singleLetter = line.match(/^([A-EА-Дa-eа-д]\??)(?:\)|\.)?$/i);
-                if (singleLetter) return normalizeLetter(singleLetter[1]);
+                const solo = line.match(/^[\[\(]?([A-EАБВГДЕС])[\]\)\.]?$/i);
+                if (solo) {
+                    return normLetter(solo[1]);
+                }
+
+                const optLine = line.match(/^[\[\(]?([A-EАБВГДЕС])[\]\)\.]\s+(.+)$/i);
+                if (optLine && i === lines.length - 1) {
+                    return formatResult(optLine[1], optLine[2]);
+                }
+
+                const inLine = line.match(/\b([A-EАБВГДЕС])\s*[\-\—]?\s*variant\s+to['‘`]?g['‘`]?ri/i);
+                if (inLine) {
+                    return normLetter(inLine[1]);
+                }
             }
 
-            const allLetters = [...clean.matchAll(/\b([A-D]\??)\b/g)];
-            if (allLetters.length > 0) {
-                return allLetters[allLetters.length - 1][1].toUpperCase();
+            const lastFew = lines.slice(-3).join(" ");
+            const capMatches = [...lastFew.matchAll(/(?:^|[\s\(\[])([A-DАБВГДС])(?:[\)\]\.]|\s+variant)/g)];
+            if (capMatches.length > 0) {
+                return normLetter(capMatches[capMatches.length - 1][1]);
             }
 
-            return "-";
-        }
-
-        function normalizeLetter(ch) {
-            if (!ch) return "-";
-            let upper = ch.toUpperCase();
-            if (upper.startsWith("А")) return "A" + upper.slice(1);
-            if (upper.startsWith("В")) return "B" + upper.slice(1);
-            if (upper.startsWith("С")) return "C" + upper.slice(1);
-            if (upper.startsWith("Д")) return "D" + upper.slice(1);
-            if (upper.startsWith("Е")) return "E" + upper.slice(1);
-            return upper;
+            return lines.length > 0 ? lines[lines.length - 1].slice(0, 34) : "-";
         }
 
         return await new Promise(resolve => {
@@ -696,7 +770,7 @@ async function attachImageAndAsk(dataUrl, prompt) {
                     const latestNewResponse = newResponses[newResponses.length - 1];
                     const text = (latestNewResponse.textContent || latestNewResponse.innerText || "").trim();
 
-                    const hasAnswerTag = /(?:JAVOB|ANSWER|ОТВЕТ)\s*[:=\-—]\s*[A-FА-Я]/i.test(text);
+                    const hasAnswerTag = /(?:JAVOB|YAKUNIY\s+JAVOB|ANSWER|ОТВЕТ)\s*[:=\-—]/i.test(text);
 
                     const isStillGenerating = !!document.querySelector(
                         'button[aria-label*="Stop" i], button[aria-label*="to‘xtat" i], button[aria-label*="to\'xtat" i], button[aria-label*="toxtat" i], button[aria-label*="Остановить" i], button.stop-button, mat-progress-bar'
@@ -713,13 +787,13 @@ async function attachImageAndAsk(dataUrl, prompt) {
                         stable = 0;
                     }
 
-                    if (hasAnswerTag && ((!isStillGenerating && stable >= 4) || hasActionButtons || stable >= 7)) {
+                    if (hasAnswerTag && ((!isStillGenerating && stable >= 2) || stable >= 6)) {
                         clearInterval(timer);
                         resolve(extractCleanAnswer(text));
                         return;
                     }
 
-                    if (!isStillGenerating && (hasActionButtons || stable >= 8) && text.length > 15) {
+                    if (!isStillGenerating && (hasActionButtons || stable >= 6) && text.length > 10) {
                         clearInterval(timer);
                         resolve(extractCleanAnswer(text));
                         return;
